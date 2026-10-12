@@ -1,33 +1,34 @@
 
 #pragma once
 
+#include <cstddef>
+
 /*
  * AuditMetrics.h
  *
- * Stores the number of findings discovered during
- * a Windows process memory audit.
+ * Stores region counts by investigation priority.
  *
- * Severity Levels:
- *
- * Critical:
- *   Confirmed, severe security vulnerabilities.
+ * Investigation Priorities:
  *
  * High:
- *   Potentially dangerous memory configurations.
+ *   Private memory with ordinary write and execute permissions.
  *
  * Medium:
- *   Suspicious memory configurations requiring investigation.
+ *   Other ordinary W+X memory, or private executable memory.
  *
  * Low:
- *   Informational findings or minor security concerns.
+ *   Executable copy-on-write or executable memory of unknown type.
+ *
+ * A region contributes to at most one priority counter.
+ * Priorities do not establish external access, exploitability,
+ * malicious intent, or a confirmed vulnerability.
  *
  * All counters are initialized to zero.
  */
 
 struct AuditMetrics
 {
-    int critical = 0;
-    int high = 0;
-    int medium = 0;
-    int low = 0;
+    std::size_t high = 0;
+    std::size_t medium = 0;
+    std::size_t low = 0;
 };

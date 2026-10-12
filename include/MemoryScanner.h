@@ -7,6 +7,7 @@
 
 #include "AuditMetrics.h"
 #include "MemoryRegion.h"
+#include "MemoryExposure.h"
 #include "MemoryStatistics.h"
 #include "ScanResult.h"
 
@@ -16,11 +17,10 @@
  * Declares functionality for enumerating, analyzing,
  * filtering, and displaying process memory regions.
  *
- * Version 0.4 adds:
- *   - Scan completion tracking
- *   - Memory usage statistics
- *   - Memory region display filters
- *   - Expanded audit summaries
+ * Version 0.5 adds:
+ *   - Ordinary write and copy-on-write classification
+ *   - Private, image, and mapped executable categories
+ *   - Investigation priorities independent of access rights
  */
 
 // Controls which memory regions appear in the report.
@@ -28,7 +28,8 @@ enum class DisplayFilter
 {
     All,
     Executable,
-    Suspicious
+    WritableExecutable,
+    Review
 };
 
 // Convert Windows memory attributes to readable text.
@@ -38,7 +39,15 @@ std::string memoryTypeToString(DWORD type);
 // Memory permission checks.
 bool isExecutable(DWORD protection);
 bool isWritable(DWORD protection);
+bool isCopyOnWrite(DWORD protection);
 bool isWritableExecutable(DWORD protection);
+
+// Use one classification policy for totals, filters, and findings.
+MemoryExposure classifyMemoryExposure(const MemoryRegion& region);
+std::string exposureToString(ExposureCategory category);
+std::string priorityToString(InvestigationPriority priority);
+bool matchesDisplayFilter(const MemoryExposure& exposure, DisplayFilter filter);
+AuditMetrics calculateAuditMetrics(const std::vector<MemoryRegion>& regions);
 
 // Enumerate committed memory regions.
 ScanResult enumerateMemoryRegions(HANDLE process);
