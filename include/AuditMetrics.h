@@ -17,7 +17,8 @@
  *   Other ordinary W+X memory, or private executable memory.
  *
  * Low:
- *   Executable copy-on-write or executable memory of unknown type.
+ *   Executable copy-on-write, executable memory of unknown type,
+ *   or an unrecognized base protection requiring clarification.
  *
  * A region contributes to at most one priority counter.
  * Priorities do not establish external access, exploitability,
