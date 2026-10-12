@@ -1,8 +1,10 @@
 #include <iostream>
 #include <windows.h>
+#include <limits>
 
 /*
  * Windows Memory Auditor v0.1
+ * Author: KyshawnDEV
  *
  * Purpose:
  *   Inspect the virtual memory of Windows processes to
@@ -75,25 +77,80 @@ void displayMenu()
     std::cout << "Make your menu selection now: ";
 }
 
+//main is main
 int main()
 {
-    int choice;
-    do {
-        displayMenu();
-        std::cin >> choice;
+    int selection = -1;
 
-        switch (choice) {
+    // Keep displaying the menu until the user selects 0.
+    while (selection != 0)
+    {
+        displayMenu();
+
+        /*
+         * Read the user's menu selection.
+         *
+         * std::cin.fail() detects invalid input such
+         * as entering letters instead of an integer.
+         */
+        if (!(std::cin >> selection))
+        {
+            // Clear the input stream's error state.
+            std::cin.clear();
+
+            // Discard invalid input.
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+
+            std::cout << "\n[ERROR] Invalid selection.\n";
+            continue;
+        }
+
+        switch (selection)
+        {
             case 1:
-                std::cout << "Scanning a process...\n";
+            {
+                unsigned long long inputPid = 0;
+
+                std::cout << "\nEnter target Process ID (PID): ";
+
+                /*
+                 * Validate the supplied process identifier.
+                 *
+                 * Windows PIDs are represented using DWORD.
+                 * Reject zero and values outside DWORD's range.
+                 */
+                if (!(std::cin >> inputPid) ||
+                    inputPid == 0 ||
+                    inputPid > std::numeric_limits<DWORD>::max())
+                {
+                    std::cin.clear();
+                    std::cin.ignore(
+                        std::numeric_limits<std::streamsize>::max(),
+                        '\n'
+                    );
+
+                    std::cout << "[ERROR] Invalid PID.\n";
+                    break;
+                }
+
+                /*
+                 * Convert the validated input into a DWORD
+                 * and attempt to open the target process.
+                 */
+                //scanProcess(); To be implemented.
+
                 break;
+            }
+
             case 0:
-                std::cout << "Exiting...\n";
+                std::cout << "\n[INFO] Exiting MemoryAuditor...\n";
                 break;
+
             default:
-                std::cout << "Invalid menu selection. Please try again.\n";
+                std::cout << "\n[ERROR] Unknown menu option.\n";
                 break;
         }
-    } while (choice != 0);
+    }
 
     return 0;
 }
