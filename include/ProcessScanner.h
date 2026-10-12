@@ -10,14 +10,16 @@
  *
  * Current Features:
  *   - Open a process using its PID
- *   - Verify process access
+ *   - Request query access to process metadata
+ *   - Enumerate committed virtual memory regions
+ *   - Calculate memory statistics
+ *   - Record W+X findings requiring review
+ *   - Select a memory region display filter
+ *   - Display scan status and audit results
  *   - Release the process handle
  *
- * Future Features:
- *   - Enumerate virtual memory regions
- *   - Inspect memory protection flags
- *   - Identify potentially unsafe memory configurations
- *   - Record audit findings
+ * Memory enumeration, analysis, and reporting are
+ * implemented by the MemoryScanner component.
  */
 
 /*
@@ -29,7 +31,12 @@
  * Returns:
  *   void
  *
- * This function currently opens and closes a process.
- * Memory scanning will be implemented later.
+ * Opens the target with PROCESS_QUERY_INFORMATION,
+ * coordinates scanning and reporting, and releases
+ * the process handle after the scan.
+ *
+ * Query access does not establish permission to write
+ * to the target process's memory. This function does
+ * not read or modify memory contents.
  */
 void scanProcess(DWORD pid);

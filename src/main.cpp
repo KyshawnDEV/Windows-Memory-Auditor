@@ -9,12 +9,15 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.3
+ * Windows Memory Auditor v0.4
  * Author: KyshawnDEV
  *
  * Purpose:
- *   Inspect Windows processes for potentially unsafe
- *   memory configurations.
+ *   Inspect Windows process memory permissions and types
+ *   to identify configurations requiring investigation.
+ *
+ *   Memory permissions alone do not establish whether
+ *   another process can access or modify a region.
  *
  * Current Features:
  *   - Interactive menu
@@ -22,6 +25,16 @@
  *   - Process selection by PID
  *   - Input validation
  *   - Process handle management
+ *   - Committed virtual memory enumeration
+ *   - Memory type and protection analysis
+ *   - W+X findings requiring review
+ *   - Committed memory statistics
+ *   - Memory region display filters
+ *   - Complete, partial, and failed scan reporting
+ *
+ * Scanning Behavior:
+ *   Queries memory metadata without reading or modifying
+ *   the target process's memory contents.
  *
  * Platform:
  *   Windows x86-64

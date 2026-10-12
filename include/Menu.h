@@ -12,7 +12,8 @@
  * Displays the main menu for MemoryAuditor.
  *
  * Current options:
- *   [1] Scan a process
+ *   [1] List running processes
+ *   [2] Scan a process by PID
  *   [0] Exit
  */
 void displayMenu();

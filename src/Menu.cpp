@@ -8,11 +8,12 @@
  *
  * Implements the console interface for MemoryAuditor.
  *
- * Version 0.4 adds:
- *   - Scan completion tracking
- *   - Memory usage statistics
- *   - Memory region display filters
- *   - Expanded audit summaries
+ * Current Features:
+ *   - Display the application name and version
+ *   - List the process enumeration and scanning options
+ *   - Display the exit option and selection prompt
+ *
+ * Menu input and program control are handled by main.cpp.
  */
 
 void displayMenu()
