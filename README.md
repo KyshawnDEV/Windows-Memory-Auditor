@@ -1,4 +1,4 @@
-# Windows Memory Auditor v0.5
+# Windows Memory Auditor v0.6
 
 Author: KyshawnDEV
 
@@ -15,8 +15,45 @@ code storage and execution exposure. It is not an antivirus or malware classifie
   and resource ownership.
 - `MemoryScanner.cpp`: virtual memory queries, shared exposure classification,
   statistics, investigation priorities, and reports.
+- `MemoryContext.cpp`: allocation grouping, Tool Help module snapshots,
+  mapped-file paths, and context reporting.
 - `include/`: region metadata, scan results, exposure categories, statistics,
   priority counters, and Windows handle ownership.
+
+## Allocation and module context
+
+v0.6 preserves `MEMORY_BASIC_INFORMATION::AllocationBase` alongside each
+region's `BaseAddress`. The allocation base identifies the original allocation
+or mapped view; the region base identifies a queried range with uniform
+attributes. Several protection ranges can therefore belong to one allocation.
+
+Region rows keep their existing order and filters. Each displayed allocation
+gets a context header with the original base, observed committed byte and
+region totals, executable/W+X region counts, and highest observed region
+priority. Reserved gaps are not included in committed totals. Missing bases
+are reported explicitly and those regions remain separate.
+
+Tool Help module snapshots associate image allocations with observed loader
+modules only when the allocation base and all collected image ranges fit the
+module's recorded range. Private executable allocations are not assigned a
+module simply because an address overlaps a module range. An association does
+not lower exposure priorities or establish trustworthy contents.
+
+`GetMappedFileNameW()` queries backing-file metadata for image and mapped
+allocations using the existing query-only handle. Returned device paths are
+retained without guessing a drive letter. Unicode strings are stored intact;
+non-ASCII UTF-16 units and control characters are displayed as `\uXXXX` escapes
+to preserve spelling in the existing console interface. Tool Help module paths
+that may fill its fixed-size buffer are labeled as potentially truncated.
+
+Context can be available, unavailable, not queried, or not applicable. A
+complete module snapshot with no matching module is reported as "No matching
+module observed," not as malicious memory. Paging-file-backed views may have
+no filename. Context errors retain their Windows error codes when provided
+and do not alter memory scan completion or hide collected regions.
+
+Memory and context are separate observations, not an atomic snapshot. Context
+summaries cover all collected allocation groups regardless of the display filter.
 
 ## Memory exposure analysis
 
@@ -71,6 +108,11 @@ which other processes can obtain access rights to the target.
 pages. Modified COW pages can still be reported as `MEM_IMAGE` or `MEM_MAPPED`.
 The auditor does not inspect page-level sharing, code contents, signatures,
 control-flow mitigations, or process security descriptors.
+Loader associations do not include every possible image mapping; module
+snapshots can omit data-file loads and can fail while the loader list changes.
+The auditor retries `ERROR_BAD_LENGTH` up to three times before reporting
+unavailable module context. It does not identify the creator of a private
+allocation or assign it a JIT/runtime origin without supporting evidence.
 
 A 64-bit Windows toolchain is required. WOW64 target scans are capped at the
 32-bit address ceiling. If a target rejects queries below that ceiling, the
@@ -96,6 +138,12 @@ guarded, mapped COW, executable COW, and image regions. Test allocations never
 execute code. `MemoryTest` remains an interactive private RWX target for manual
 auditor testing.
 
+`ContextTests` checks grouping across protection changes and reserved gaps,
+missing bases, module range validation, unchanged priorities, unavailable
+context, Unicode reporting, and live image/readonly file mappings. Both test
+programs run through CTest. Live fixtures currently validate native x64 targets;
+live WOW64 validation remains outstanding.
+
 ## Version history
 
 - **v0.4.1:** stale comment updates, EOF handling, enumeration error reporting,
@@ -103,7 +151,16 @@ auditor testing.
 - **v0.5:** memory exposure categories, separate COW accounting, private executable
   analysis, investigation priorities, guarded base permissions, investigation
   filter, architecture reporting, and automated exposure tests.
+- **v0.6:** original allocation bases, allocation context headers, loader module
+  associations, mapped-file paths, explicit context availability, a more precise
+  no-permission label, and automated context tests.
+
+The next planned milestone is **v0.7: repeated-scan comparisons**. External
+access assessment remains a separate future milestone.
 
 Windows API references: [VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex),
 [memory protection constants](https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants),
 and [process access rights](https://learn.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights).
+Context references: [MEMORY_BASIC_INFORMATION](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-memory_basic_information),
+[module snapshots](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot),
+and [GetMappedFileNameW](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew).
