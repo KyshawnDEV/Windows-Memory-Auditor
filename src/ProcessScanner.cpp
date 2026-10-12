@@ -2,6 +2,7 @@
 #include "ProcessScanner.h"
 #include "MemoryScanner.h"
 #include "AuditMetrics.h"
+#include "WindowsHandle.h"
 
 #include <iostream>
 #include <limits>
@@ -18,7 +19,9 @@
  *   - Region display filtering
  *   - Expanded audit summaries
  *
- * Process handles are released after each scan.
+ * Version 0.4.1:
+ *   - Releases handles if an exception interrupts scanning
+ *   - Reports process handle cleanup failures
  */
 
 void scanProcess(DWORD pid)
@@ -32,10 +35,14 @@ void scanProcess(DWORD pid)
     HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 
     if (process == nullptr) {
+        DWORD errorCode = GetLastError();
         std::cerr << "[ERROR] Unable to open process.\n";
-        std::cerr << "[ERROR] Windows error code: " << GetLastError() << '\n';
+        std::cerr << "[ERROR] Windows error code: " << errorCode << '\n';
         return;
     }
+
+    // Keep ownership separate from the handle used by Windows APIs.
+    WindowsHandle processHandle(process);
 
     std::cout << "[SUCCESS] Process opened successfully!\n";
 
@@ -133,11 +140,19 @@ void scanProcess(DWORD pid)
     // --------------------------------------------------------
 
     /*
-     * CloseHandle() releases the process handle.
+     * Explicit cleanup allows us to report a Windows error.
+     * The owner also releases the handle if an exception
+     * interrupts scanning before this step is reached.
      *
      * This does not terminate the target process.
      */
-    CloseHandle(process);
+    if (!processHandle.close())
+    {
+        DWORD errorCode = GetLastError();
+        std::cerr << "[ERROR] Unable to close process handle.\n";
+        std::cerr << "[ERROR] Windows error code: " << errorCode << '\n';
+        return;
+    }
 
     std::cout << "\n[SUCCESS] Process handle closed.\n";
 }

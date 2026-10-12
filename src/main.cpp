@@ -9,7 +9,7 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.4
+ * Windows Memory Auditor v0.4.1
  * Author: KyshawnDEV
  *
  * Purpose:
@@ -60,7 +60,7 @@
  *
  * Returns:
  *   true  - Input is valid.
- *   false - Input is invalid.
+ *   false - Input is invalid or could not be read.
  *
  * Rejects:
  *   - Negative numbers
@@ -129,6 +129,14 @@ int main()
         // Read and validate the menu selection.
         if (!readUnsignedInteger(selection, 2))
         {
+            /*
+             * A closed or failed input stream cannot provide
+             * another selection. Exit before retrying so EOF
+             * does not cause an endless menu and error loop.
+             */
+            if (!std::cin)
+                break;
+
             std::cout << "\n[ERROR] Invalid menu selection.\n";
             continue;
         }

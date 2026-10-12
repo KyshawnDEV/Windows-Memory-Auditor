@@ -1,5 +1,6 @@
 
 #include "ProcessEnumerator.h"
+#include "WindowsHandle.h"
 
 #include <tlhelp32.h>
 #include <algorithm>
@@ -52,11 +53,15 @@ std::vector<ProcessInfo> enumerateProcesses()
      */
     if (snapshot == INVALID_HANDLE_VALUE)
     {
+        DWORD errorCode = GetLastError();
         std::cerr << "[ERROR] Failed to create process snapshot.\n";
-        std::cerr << "[ERROR] Windows error code: " << GetLastError() << '\n';
+        std::cerr << "[ERROR] Windows error code: " << errorCode << '\n';
 
         return processes;
     }
+
+    // Release the snapshot even if storing a process entry throws.
+    WindowsHandle snapshotHandle(snapshot);
 
     // --------------------------------------------------------
     // STEP 2: PREPARE PROCESS ENTRY
@@ -100,11 +105,31 @@ std::vector<ProcessInfo> enumerateProcesses()
             processes.push_back(process);
 
         } while (Process32NextW(snapshot, &entry));
+
+        /*
+         * ERROR_NO_MORE_FILES indicates normal completion.
+         * Other errors mean the collected list may be partial.
+         * Preserve the error before console output can change it.
+         */
+        DWORD errorCode = GetLastError();
+
+        if (errorCode != ERROR_NO_MORE_FILES)
+        {
+            std::cerr << "[WARNING] Process enumeration stopped early.\n";
+            std::cerr << "[WARNING] The process list may be incomplete.\n";
+            std::cerr << "[ERROR] Windows error code: " << errorCode << '\n';
+        }
     }
     else
     {
-        std::cerr << "[ERROR] Failed to read process snapshot.\n";
-        std::cerr << "[ERROR] Windows error code: "<< GetLastError() << '\n';
+        DWORD errorCode = GetLastError();
+
+        // An empty snapshot is different from an enumeration failure.
+        if (errorCode != ERROR_NO_MORE_FILES)
+        {
+            std::cerr << "[ERROR] Failed to read process snapshot.\n";
+            std::cerr << "[ERROR] Windows error code: " << errorCode << '\n';
+        }
     }
 
     // --------------------------------------------------------
@@ -114,9 +139,15 @@ std::vector<ProcessInfo> enumerateProcesses()
     /*
      * The snapshot is a Windows-managed resource.
      *
-     * CloseHandle() releases it after enumeration.
+     * Explicit cleanup releases it after enumeration.
+     * Scope cleanup also handles exceptions and early returns.
      */
-    CloseHandle(snapshot);
+    if (!snapshotHandle.close())
+    {
+        DWORD errorCode = GetLastError();
+        std::cerr << "[ERROR] Unable to close process snapshot.\n";
+        std::cerr << "[ERROR] Windows error code: " << errorCode << '\n';
+    }
 
     // --------------------------------------------------------
     // STEP 5: SORT PROCESSES BY PID
