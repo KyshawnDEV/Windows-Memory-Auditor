@@ -86,6 +86,9 @@ void testDefinitionsAndFingerprints()
     require(accessOutcomeFromOpenError(ERROR_INVALID_PARAMETER) == AccessProbeOutcome::OpenFailed &&
             accessOutcomeFromOpenError(ERROR_INVALID_HANDLE) == AccessProbeOutcome::OpenFailed,
             "Non-permission API failure mislabeled as denial");
+    require(accessOutcomeFromGrantedMask(0x1028, 0x1008) == AccessProbeOutcome::RightsReduced &&
+            accessOutcomeFromGrantedMask(0x1028, 0x101028) == AccessProbeOutcome::Obtained,
+            "Reduced handle rights were assumed to satisfy the requested mask");
 
     CallerFingerprint first{};
     first.available = true;
@@ -312,8 +315,12 @@ void testLiveProbes()
     require(assessment.status == AccessAssessmentStatus::Complete && assessment.identityVerified,
             "Normal live access assessment did not complete");
     require(std::all_of(assessment.probes.begin(), assessment.probes.end(), [](const AccessProbeResult& probe)
-        { return probe.attempted && probe.handleObtained && probe.outcome == AccessProbeOutcome::Obtained &&
-                 probe.cleanupErrorCode == ERROR_SUCCESS; }), "Normal owned child access request failed");
+        {
+            bool verified = probe.grantedMaskAvailable && probe.outcome == AccessProbeOutcome::Obtained &&
+                (probe.grantedAccess & probe.definition.requestedAccess) == probe.definition.requestedAccess;
+            bool unknown = !probe.grantedMaskAvailable && probe.outcome == AccessProbeOutcome::GrantedMaskUnavailable;
+            return probe.attempted && probe.handleObtained && (verified || unknown) && probe.cleanupErrorCode == ERROR_SUCCESS;
+        }), "Normal owned child access request failed or had its granted mask misreported");
     require(sameCallerFingerprint(before, captureCallerFingerprint()), "Assessment altered caller privileges or token");
 
     /*
@@ -411,6 +418,19 @@ void testReporting()
         displayAccessAssessment(assessment);
         require(capture.text().find("CALLER TOKEN CHANGED") != std::string::npos,
                 "Changed caller context was hidden");
+    }
+
+    // A successful open without mask inspection is evidence of a handle, not verified requested rights.
+    assessment.status = AccessAssessmentStatus::Complete;
+    assessment.probes[0].handleObtained = true;
+    assessment.probes[0].openErrorCode = ERROR_SUCCESS;
+    assessment.probes[0].outcome = AccessProbeOutcome::GrantedMaskUnavailable;
+    {
+        ConsoleCapture capture;
+        displayAccessAssessment(assessment);
+        require(capture.text().find("HANDLE RETURNED; GRANTED MASK UNAVAILABLE") != std::string::npos &&
+                capture.text().find("REQUESTED HANDLE RIGHTS VERIFIED") == std::string::npos,
+                "Unknown granted mask was reported as verified rights");
     }
 }
 
