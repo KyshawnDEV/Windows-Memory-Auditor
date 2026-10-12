@@ -17,6 +17,13 @@ struct MemoryRegion
     // Starting virtual address of the memory region.
     uintptr_t baseAddress = 0;
 
+    /*
+     * Base of the original allocation or mapped view.
+     * One allocation can contain several queried regions
+     * when their current protections or states differ.
+     */
+    std::uintptr_t allocationBase = 0;
+
     // Size of the region in bytes.
     SIZE_T regionSize = 0;
 
