@@ -1,54 +1,42 @@
 
 #include "MemoryScanner.h"
 
-#include <iostream>
-#include <iomanip>
-#include <limits>
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <string>
 
 /*
  * MemoryScanner.cpp
  *
- * Implements virtual memory enumeration and analysis.
+ * Implements memory enumeration, permission analysis,
+ * filtering, and reporting.
  *
  * Windows API:
  *   GetNativeSystemInfo()
  *   VirtualQueryEx()
  *
- * Security Checks:
- *   - Writable and executable memory regions
+ * Version 0.4:
+ *   - Reports complete, partial, and failed scans
+ *   - Calculates committed memory statistics
+ *   - Filters the displayed memory regions
+ *   - Produces expanded audit summaries
  *
- * Note:
- *   Suspicious memory permissions are indicators,
- *   not confirmed security vulnerabilities.
+ * The scanner does not read or modify memory contents.
  */
-
 
 // ============================================================
 // MEMORY PROTECTION CLASSIFICATION
 // ============================================================
 
-/*
- * Converts Windows memory protection constants
- * into readable permission strings.
- *
- * R = Read
- * W = Write
- * X = Execute
- * C = Copy-on-write
- *
- * Examples:
- *   PAGE_READWRITE         -> RW-
- *   PAGE_EXECUTE_READ      -> R-X
- *   PAGE_EXECUTE_READWRITE -> RWX
- */
 std::string protectionToString(DWORD protection)
 {
     /*
-     * The lower byte contains the base protection.
+     * The base protection occupies the low-order byte.
      *
-     * Additional flags such as PAGE_GUARD may also
-     * be present in the original protection value.
+     * Additional flags, such as PAGE_GUARD, can be
+     * combined with the base protection.
      */
     DWORD baseProtection = protection & 0xFF;
 
@@ -93,11 +81,9 @@ std::string protectionToString(DWORD protection)
             break;
     }
 
-    // Mark guarded memory regions.
     if (protection & PAGE_GUARD)
         result += "+GUARD";
 
-    // Mark non-cacheable memory.
     if (protection & PAGE_NOCACHE)
         result += "+NC";
 
@@ -109,18 +95,6 @@ std::string protectionToString(DWORD protection)
 // MEMORY TYPE CLASSIFICATION
 // ============================================================
 
-/*
- * Converts the memory type into a readable string.
- *
- * MEM_IMAGE:
- *   Memory associated with executable images or DLLs.
- *
- * MEM_MAPPED:
- *   Memory backed by a mapped section.
- *
- * MEM_PRIVATE:
- *   Private memory belonging to the process.
- */
 std::string memoryTypeToString(DWORD type)
 {
     switch (type)
@@ -141,34 +115,70 @@ std::string memoryTypeToString(DWORD type)
 
 
 // ============================================================
-// WRITABLE / EXECUTABLE MEMORY DETECTION
+// MEMORY PERMISSION CHECKS
 // ============================================================
 
 /*
- * Determines whether a region has both write and
- * execute permissions.
+ * isExecutable()
  *
- * PAGE_EXECUTE_READWRITE:
- *   Pages can be read, written, and executed.
+ * Determines whether the region has an executable
+ * base protection.
  *
- * PAGE_EXECUTE_WRITECOPY:
- *   Pages can be executed and support copy-on-write.
- *
- * Guarded pages are excluded from this basic check
- * because access triggers guard-page handling.
- *
- * Returns:
- *   true  - Potentially interesting W+X configuration.
- *   false - No matching configuration.
+ * Guarded pages are excluded from the current
+ * accessible-executable classification.
  */
-bool isWritableExecutable(DWORD protection)
+bool isExecutable(DWORD protection)
 {
     if (protection & PAGE_GUARD)
         return false;
 
     DWORD baseProtection = protection & 0xFF;
 
-    return ( baseProtection == PAGE_EXECUTE_READWRITE || baseProtection == PAGE_EXECUTE_WRITECOPY);
+    return (
+        baseProtection == PAGE_EXECUTE ||
+        baseProtection == PAGE_EXECUTE_READ ||
+        baseProtection == PAGE_EXECUTE_READWRITE ||
+        baseProtection == PAGE_EXECUTE_WRITECOPY
+    );
+}
+
+
+/*
+ * isWritable()
+ *
+ * Checks for writable or copy-on-write permissions.
+ *
+ * Copy-on-write is included in this broad accounting
+ * category, but differs from ordinary shared writes.
+ */
+bool isWritable(DWORD protection)
+{
+    if (protection & PAGE_GUARD)
+        return false;
+
+    DWORD baseProtection = protection & 0xFF;
+
+    return (
+        baseProtection == PAGE_READWRITE ||
+        baseProtection == PAGE_WRITECOPY ||
+        baseProtection == PAGE_EXECUTE_READWRITE ||
+        baseProtection == PAGE_EXECUTE_WRITECOPY
+    );
+}
+
+
+/*
+ * isWritableExecutable()
+ *
+ * Detects memory with executable and writable or
+ * copy-on-write permissions.
+ *
+ * A matching region is an indicator for review,
+ * not proof of an exploitable vulnerability.
+ */
+bool isWritableExecutable(DWORD protection)
+{
+    return isExecutable(protection) && isWritable(protection);
 }
 
 
@@ -176,64 +186,42 @@ bool isWritableExecutable(DWORD protection)
 // MEMORY REGION ENUMERATION
 // ============================================================
 
-/*
- * enumerateMemoryRegions()
- *
- * Walks through the virtual address space of a process.
- *
- * Parameters:
- *   process - Handle returned by OpenProcess().
- *
- * Returns:
- *   A vector containing committed memory regions.
- *
- * The scanner does not read or modify memory contents.
- */
-std::vector<MemoryRegion> enumerateMemoryRegions(HANDLE process)
+ScanResult enumerateMemoryRegions(HANDLE process)
 {
-    std::vector<MemoryRegion> regions;
+    ScanResult scanResult{};
 
     // --------------------------------------------------------
-    // STEP 1: OBTAIN SYSTEM ADDRESS LIMITS
+    // STEP 1: VALIDATE PROCESS HANDLE
     // --------------------------------------------------------
 
-    /*
-     * SYSTEM_INFO contains information about the
-     * current Windows system.
-     *
-     * Use the minimum and maximum application
-     * addresses to bound our memory enumeration.
-     */
+    if (process == nullptr ||
+        process == INVALID_HANDLE_VALUE)
+    {
+        scanResult.errorCode = ERROR_INVALID_HANDLE;
+        return scanResult;
+    }
+
+    // --------------------------------------------------------
+    // STEP 2: OBTAIN SYSTEM ADDRESS LIMITS
+    // --------------------------------------------------------
+
     SYSTEM_INFO systemInfo{};
-
     GetNativeSystemInfo(&systemInfo);
 
-    uintptr_t address =
-        reinterpret_cast<uintptr_t>(
-            systemInfo.lpMinimumApplicationAddress
-        );
+    std::uintptr_t address =
+        reinterpret_cast<std::uintptr_t>(systemInfo.lpMinimumApplicationAddress);
 
-    uintptr_t maximumAddress =
-        reinterpret_cast<uintptr_t>(
-            systemInfo.lpMaximumApplicationAddress
-        );
+    const std::uintptr_t maximumAddress = reinterpret_cast<std::uintptr_t > (systemInfo.lpMaximumApplicationAddress);
 
     // --------------------------------------------------------
-    // STEP 2: WALK THE VIRTUAL ADDRESS SPACE
+    // STEP 3: WALK THE VIRTUAL ADDRESS SPACE
     // --------------------------------------------------------
 
-    /*
-     * VirtualQueryEx() describes the region containing
-     * the supplied virtual address.
-     *
-     * After inspecting each region, advance to
-     * the address immediately following that region.
-     */
     while (address <= maximumAddress)
     {
         MEMORY_BASIC_INFORMATION mbi{};
 
-        SIZE_T result = VirtualQueryEx(
+        SIZE_T bytesReturned = VirtualQueryEx(
             process,
             reinterpret_cast<LPCVOID>(address),
             &mbi,
@@ -241,63 +229,72 @@ std::vector<MemoryRegion> enumerateMemoryRegions(HANDLE process)
         );
 
         /*
-         * A return value of zero indicates failure.
+         * VirtualQueryEx() returns zero on failure.
          *
-         * Report the address and error code.
+         * Preserve both the error code and the address
+         * so the user can identify where scanning stopped.
          */
-        if (result == 0)
+        if (bytesReturned == 0)
         {
-            std::cerr
-                << "[ERROR] VirtualQueryEx failed at 0x"
-                << std::hex << address << std::dec
-                << ". Windows error: "
-                << GetLastError() << '\n';
+            scanResult.errorCode = GetLastError();
+            scanResult.failureAddress = address;
 
-            break;
+            scanResult.status =
+                scanResult.queriedRegions == 0
+                ? ScanStatus::Failed
+                : ScanStatus::Partial;
+
+            return scanResult;
         }
 
-        uintptr_t baseAddress =
-            reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+        scanResult.queriedRegions++;
+
+        std::uintptr_t baseAddress =
+            reinterpret_cast<std::uintptr_t>(
+                mbi.BaseAddress
+            );
+
+        // ----------------------------------------------------
+        // STEP 4: VALIDATE REGION BOUNDARIES
+        // ----------------------------------------------------
 
         /*
-         * Validate the region boundary before adding
-         * the size to its base address.
-         *
-         * This prevents arithmetic overflow or
-         * an infinite loop.
+         * Ensure that adding RegionSize to BaseAddress
+         * cannot overflow uintptr_t.
          */
         if (mbi.RegionSize == 0 ||
             mbi.RegionSize >
-                std::numeric_limits<uintptr_t>::max()
+                std::numeric_limits<std::uintptr_t>::max()
                 - baseAddress)
         {
-            std::cerr
-                << "[ERROR] Invalid memory region boundary.\n";
+            scanResult.errorCode = ERROR_INVALID_DATA;
+            scanResult.failureAddress = address;
 
-            break;
+            scanResult.status = ScanStatus::Partial;
+            return scanResult;
         }
 
-        uintptr_t nextAddress =
+        std::uintptr_t nextAddress =
             baseAddress + mbi.RegionSize;
 
+        /*
+         * A valid query must advance the address.
+         *
+         * Otherwise the loop could run indefinitely.
+         */
         if (nextAddress <= address)
         {
-            std::cerr
-                << "[ERROR] Memory enumeration did not advance.\n";
+            scanResult.errorCode = ERROR_INVALID_DATA;
+            scanResult.failureAddress = address;
 
-            break;
+            scanResult.status = ScanStatus::Partial;
+            return scanResult;
         }
 
         // ----------------------------------------------------
-        // STEP 3: COLLECT COMMITTED REGIONS
+        // STEP 5: COLLECT COMMITTED REGIONS
         // ----------------------------------------------------
 
-        /*
-         * MEM_COMMIT indicates that storage has been
-         * committed for the region.
-         *
-         * Reserved and free regions are skipped in v0.3 currently
-         */
         if (mbi.State == MEM_COMMIT)
         {
             MemoryRegion region{};
@@ -309,107 +306,267 @@ std::vector<MemoryRegion> enumerateMemoryRegions(HANDLE process)
             region.allocationProtection = mbi.AllocationProtect;
             region.type = mbi.Type;
 
-            regions.push_back(region);
+            scanResult.regions.push_back(region);
         }
 
-        // Continue to the next region.
+        // Move to the next virtual memory region.
         address = nextAddress;
     }
 
-    return regions;
+    // --------------------------------------------------------
+    // STEP 6: MARK SUCCESSFUL COMPLETION
+    // --------------------------------------------------------
+
+    scanResult.status = ScanStatus::Complete;
+    scanResult.errorCode = ERROR_SUCCESS;
+
+    return scanResult;
 }
 
 
 // ============================================================
-// MEMORY REGION ANALYSIS
+// MEMORY STATISTICS
 // ============================================================
 
-/*
- * analyzeMemoryRegions()
- *
- * Displays collected memory regions and identifies
- * regions with writable/executable permissions.
- *
- * Parameters:
- *   regions - Memory regions collected by the scanner.
- *   metrics - Audit counters updated by this function.
- */
-void analyzeMemoryRegions(const std::vector<MemoryRegion>& regions, AuditMetrics& metrics)
+MemoryStatistics calculateMemoryStatistics(const std::vector<MemoryRegion>& regions)
+{
+    MemoryStatistics statistics{};
+
+    statistics.totalRegions = regions.size();
+
+    /*
+     * Each region represents committed virtual memory.
+     *
+     * RegionSize measures the size of the address range,
+     * not necessarily the physical RAM currently used.
+     */
+    for (const MemoryRegion& region : regions)
+    {
+        std::uint64_t size = static_cast<std::uint64_t>(region.regionSize);
+
+        // Total committed virtual memory.
+        statistics.committedBytes += size;
+
+        // Memory type totals.
+        switch (region.type)
+        {
+            case MEM_PRIVATE:
+                statistics.privateBytes += size;
+                break;
+
+            case MEM_IMAGE:
+                statistics.imageBytes += size;
+                break;
+
+            case MEM_MAPPED:
+                statistics.mappedBytes += size;
+                break;
+        }
+
+        // Permission-based totals.
+        if (isExecutable(region.protection))
+            statistics.executableBytes += size;
+
+        if (isWritable(region.protection))
+            statistics.writableBytes += size;
+
+        // Count regions requiring W+X review.
+        if (isWritableExecutable(region.protection))
+            statistics.suspiciousRegions++;
+    }
+
+    return statistics;
+}
+
+
+// ============================================================
+// MEMORY REGION DISPLAY
+// ============================================================
+
+void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilter filter)
 {
     std::cout << "\n================ MEMORY REGIONS ================\n\n";
 
+    switch (filter)
+    {
+        case DisplayFilter::All:
+            std::cout << "Filter: All committed regions\n\n";
+            break;
+
+        case DisplayFilter::Executable:
+            std::cout << "Filter: Executable regions\n\n";
+            break;
+
+        case DisplayFilter::Suspicious:
+            std::cout << "Filter: W+X regions requiring review\n\n";
+            break;
+    }
+
     std::cout << std::left
-          << std::setw(20) << "BASE ADDRESS"
-          << std::setw(14) << "SIZE"
-          << std::setw(12) << "TYPE"
-          << std::setw(16) << "PROTECTION"
-          << "FINDING\n";
+              << std::setw(20) << "BASE ADDRESS"
+              << std::setw(14) << "SIZE"
+              << std::setw(12) << "TYPE"
+              << std::setw(16) << "PROTECTION"
+              << "FINDING\n";
 
     std::cout << std::string(85, '-') << '\n';
 
+    std::size_t displayedRegions = 0;
+
     for (const MemoryRegion& region : regions)
     {
-        /*
-         * A W+X region is worth investigating.
-         *
-         * It is not automatically a vulnerability.
-         */
+        bool executable = isExecutable(region.protection);
+
         bool suspicious = isWritableExecutable(region.protection);
 
-        std::cout << "0x"
-          << std::hex
-          << std::uppercase
-          << std::right
-          << std::setfill('0')
-          << std::setw(sizeof(uintptr_t) * 2)
-          << region.baseAddress
+        // ----------------------------------------------------
+        // APPLY DISPLAY FILTER
+        // ----------------------------------------------------
 
-          // Restore normal decimal formatting.
-          << std::dec
-          << std::setfill(' ')
-          << std::left
+        if (filter == DisplayFilter::Executable && !executable) {
+            continue;
+        }
 
-          // Display region information.
-          << "  "
-          << std::setw(14) << region.regionSize
-          << std::setw(12) << memoryTypeToString(region.type)
-          << std::setw(16) << protectionToString(region.protection);
+        if (filter == DisplayFilter::Suspicious && !suspicious) {
+            continue;
+        }
+
+        displayedRegions++;
+
+        // ----------------------------------------------------
+        // PRINT REGION INFORMATION
+        // ----------------------------------------------------
+
+        /*
+         * std::right and zero padding ensure that
+         * hexadecimal addresses have leading zeros.
+         *
+         * Restore decimal formatting and left alignment
+         * before printing the remaining columns.
+         */
+        std::cout
+            << "0x"
+            << std::hex
+            << std::uppercase
+            << std::right
+            << std::setfill('0')
+            << std::setw(sizeof(std::uintptr_t) * 2)
+            << region.baseAddress
+            << std::dec
+            << std::setfill(' ')
+            << std::left
+            << "  "
+            << std::setw(14) << region.regionSize
+            << std::setw(12)
+            << memoryTypeToString(region.type)
+            << std::setw(16)
+            << protectionToString(region.protection);
 
         if (suspicious)
-        {
             std::cout << "[REVIEW] W+X";
-
-            /*
-             * For now, classify W+X regions as medium
-             * severity indicators requiring review.
-             *
-             * Future analysis will use additional
-             * evidence to determine severity.
-             */
-            metrics.medium++;
-        }
 
         std::cout << '\n';
     }
 
-    // --------------------------------------------------------
-    // DISPLAY AUDIT SUMMARY
-    // --------------------------------------------------------
+    std::cout << "\nDisplayed regions: "
+              << displayedRegions
+              << " / " << regions.size() << '\n';
+}
+
+
+// ============================================================
+// AUDIT SUMMARY
+// ============================================================
+
+void displayAuditSummary(const ScanResult& result, const MemoryStatistics& statistics, const AuditMetrics& metrics)
+{
+    constexpr double MIB = 1024.0 * 1024.0;
 
     std::cout << "\n================ AUDIT SUMMARY ================\n";
 
-    std::cout << "Committed regions: "
-              << regions.size() << '\n';
+    // --------------------------------------------------------
+    // SCAN STATUS
+    // --------------------------------------------------------
 
-    std::cout << "Critical findings: "
-              << metrics.critical << '\n';
+    std::cout << "Scan status: ";
 
-    std::cout << "High findings: "
-              << metrics.high << '\n';
+    switch (result.status)
+    {
+        case ScanStatus::Complete:
+            std::cout << "COMPLETE\n";
+            break;
 
-    std::cout << "Medium findings: "
-              << metrics.medium << '\n';
+        case ScanStatus::Partial:
+            std::cout << "PARTIAL\n";
+            break;
 
-    std::cout << "Low findings: "
-              << metrics.low << '\n';
+        case ScanStatus::Failed:
+            std::cout << "FAILED\n";
+            break;
+    }
+
+    std::cout << "Regions queried: " << result.queriedRegions << '\n';
+
+    if (result.status != ScanStatus::Complete)
+    {
+        std::cout << "Windows error: " << result.errorCode << '\n';
+
+        std::cout << "Failure address: 0x"
+                  << std::hex << std::uppercase
+                  << result.failureAddress
+                  << std::dec << '\n';
+
+        std::cout << "[WARNING] Memory statistics may be incomplete.\n";
+    }
+
+    // --------------------------------------------------------
+    // MEMORY STATISTICS
+    // --------------------------------------------------------
+
+    std::cout << "\n---------------- MEMORY STATISTICS ----------------\n";
+
+    std::cout << "Committed regions: " << statistics.totalRegions << '\n';
+
+    /*
+     * Convert byte totals into MiB.
+     *
+     * 1 MiB = 1,048,576 bytes.
+     */
+    std::cout << std::fixed << std::setprecision(2);
+
+    std::cout << "Committed memory: " << statistics.committedBytes / MIB << " MiB\n";
+
+    std::cout << "Executable memory: " << statistics.executableBytes / MIB << " MiB\n";
+
+    std::cout << "Writable memory: " << statistics.writableBytes / MIB << " MiB\n";
+
+    std::cout << "Private memory: " << statistics.privateBytes / MIB << " MiB\n";
+
+    std::cout << "Image memory: " << statistics.imageBytes / MIB << " MiB\n";
+
+    std::cout << "Mapped memory: " << statistics.mappedBytes / MIB << " MiB\n";
+
+    // Restore default floating-point formatting.
+    std::cout << std::defaultfloat;
+
+    // --------------------------------------------------------
+    // SECURITY FINDINGS
+    // --------------------------------------------------------
+
+    std::cout
+        << "\n---------------- SECURITY FINDINGS ----------------\n";
+
+    std::cout << "W+X regions: " << statistics.suspiciousRegions << '\n';
+
+    std::cout << "Critical findings: " << metrics.critical << '\n';
+
+    std::cout << "High findings: " << metrics.high << '\n';
+
+    std::cout << "Medium findings: " << metrics.medium << '\n';
+
+    std::cout << "Low findings: " << metrics.low << '\n';
+
+    std::cout
+        << "\n[INFO] W+X findings require investigation; "
+        << "they are not confirmed vulnerabilities.\n";
 }
