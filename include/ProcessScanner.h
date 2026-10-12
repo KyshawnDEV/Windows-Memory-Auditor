@@ -13,7 +13,7 @@
  *   - Request query access to process metadata
  *   - Enumerate committed virtual memory regions
  *   - Calculate memory statistics
- *   - Record W+X findings requiring review
+ *   - Record memory exposure investigation priorities
  *   - Select a memory region display filter
  *   - Display scan status and audit results
  *   - Release the process handle
