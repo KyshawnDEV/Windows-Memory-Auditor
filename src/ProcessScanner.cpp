@@ -4,47 +4,34 @@
 #include "AuditMetrics.h"
 
 #include <iostream>
-#include <vector>
+#include <limits>
+#include <string>
 
 /*
  * ProcessScanner.cpp
  *
- * Manages access to the target Windows process.
+ * Manages access to a target Windows process.
  *
- * Responsibilities:
- *   - Open the target process
- *   - Verify process access
- *   - Invoke memory enumeration
- *   - Invoke memory analysis
- *   - Release the process handle
+ * Version 0.4 adds:
+ *   - Scan completion tracking
+ *   - Memory statistics
+ *   - Region display filtering
+ *   - Expanded audit summaries
  *
- * Memory enumeration and analysis are implemented
- * separately in MemoryScanner.cpp.
+ * Process handles are released after each scan.
  */
 
 void scanProcess(DWORD pid)
 {
-    std::cout << "\n[INFO] Opening process "
-              << pid << "...\n";
-
     // --------------------------------------------------------
-    // STEP 1: OPEN THE TARGET PROCESS
+    // STEP 1: OPEN TARGET PROCESS
     // --------------------------------------------------------
 
-    /*
-     * PROCESS_QUERY_INFORMATION:
-     *   Allows querying the target's memory metadata.
-     *
-     * No process memory write permissions are requested.
-     */
+    std::cout << "\n[INFO] Opening process " << pid << "...\n";
+
     HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 
-    // --------------------------------------------------------
-    // STEP 2: VERIFY PROCESS ACCESS
-    // --------------------------------------------------------
-
-    if (process == nullptr)
-    {
+    if (process == nullptr) {
         std::cerr << "[ERROR] Unable to open process.\n";
         std::cerr << "[ERROR] Windows error code: " << GetLastError() << '\n';
         return;
@@ -53,45 +40,102 @@ void scanProcess(DWORD pid)
     std::cout << "[SUCCESS] Process opened successfully!\n";
 
     // --------------------------------------------------------
-    // STEP 3: INITIALIZE AUDIT METRICS
-    // --------------------------------------------------------
-
-    /*
-     * Each scan gets its own counters.
-     *
-     * Results from previous scans are not carried over.
-     */
-    AuditMetrics metrics{};
-
-    // --------------------------------------------------------
-    // STEP 4: ENUMERATE MEMORY REGIONS
+    // STEP 2: ENUMERATE MEMORY REGIONS
     // --------------------------------------------------------
 
     std::cout << "[INFO] Enumerating virtual memory...\n";
 
+    ScanResult result = enumerateMemoryRegions(process);
+
+    std::cout << "[INFO] Collected " << result.regions.size() << " committed regions.\n";
+
+    // --------------------------------------------------------
+    // STEP 3: CALCULATE MEMORY STATISTICS
+    // --------------------------------------------------------
+
     /*
-     * Collect committed virtual memory regions.
+     * Calculate memory totals from all collected regions.
+     *
+     * These values are independent of the display filter.
      */
-    std::vector<MemoryRegion> regions = enumerateMemoryRegions(process);
-
-    std::cout << "[INFO] Collected " << regions.size() << " committed regions.\n";
+    MemoryStatistics statistics = calculateMemoryStatistics(result.regions);
 
     // --------------------------------------------------------
-    // STEP 5: ANALYZE MEMORY REGIONS
+    // STEP 4: RECORD SECURITY FINDINGS
     // --------------------------------------------------------
+
+    AuditMetrics metrics{};
 
     /*
-     * Examine protection flags and update findings.
+     * Each W+X region is currently classified as one
+     * medium-severity indicator requiring investigation.
+     *
+     * Clamp to int's maximum because AuditMetrics
+     * currently uses int counters.
      */
-    analyzeMemoryRegions(regions, metrics);
+    if (statistics.suspiciousRegions > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        metrics.medium = std::numeric_limits<int>::max();
+    }
+    else {
+        metrics.medium = static_cast<int>(statistics.suspiciousRegions);
+    }
 
     // --------------------------------------------------------
-    // STEP 6: RELEASE PROCESS HANDLE
+    // STEP 5: SELECT DISPLAY FILTER
+    // --------------------------------------------------------
+
+    std::cout << "\n================ DISPLAY FILTER ================\n\n";
+    std::cout << "[1] All committed regions\n";
+    std::cout << "[2] Executable regions only\n";
+    std::cout << "[3] W+X regions requiring review\n\n";
+    std::cout << "Select display filter: ";
+
+    std::string selection;
+
+    /*
+     * Read the entire line so inputs such as "2abc"
+     * are not accidentally accepted as option 2.
+     *
+     * main.cpp already uses getline() for menu input,
+     * so there should be no leftover newline to consume.
+     */
+    DisplayFilter filter = DisplayFilter::All;
+
+    if (std::getline(std::cin, selection)) {
+        if (selection == "2") {
+            filter = DisplayFilter::Executable;
+        }
+        else if (selection == "3") {
+            filter = DisplayFilter::Suspicious;
+        }
+        else if (selection != "1") {
+            std::cout
+                << "[WARNING] Invalid filter. "
+                << "Displaying all regions.\n";
+        }
+    }
+    else {
+        std::cout
+            << "[WARNING] No filter selected. "
+            << "Displaying all regions.\n";
+    }
+
+    // --------------------------------------------------------
+    // STEP 6: DISPLAY SCAN RESULTS
+    // --------------------------------------------------------
+
+    displayMemoryRegions(result.regions, filter);
+
+    displayAuditSummary(result, statistics, metrics);
+
+    // --------------------------------------------------------
+    // STEP 7: RELEASE PROCESS HANDLE
     // --------------------------------------------------------
 
     /*
-     * CloseHandle() releases our reference to the process.
-     * It does not terminate the target application.
+     * CloseHandle() releases the process handle.
+     *
+     * This does not terminate the target process.
      */
     CloseHandle(process);
 
