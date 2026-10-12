@@ -9,7 +9,7 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.4.1
+ * Windows Memory Auditor v0.5
  * Author: KyshawnDEV
  *
  * Purpose:
@@ -28,6 +28,8 @@
  *   - Committed virtual memory enumeration
  *   - Memory type and protection analysis
  *   - W+X findings requiring review
+ *   - Separate ordinary write and copy-on-write accounting
+ *   - Executable region exposure and investigation priorities
  *   - Committed memory statistics
  *   - Memory region display filters
  *   - Complete, partial, and failed scan reporting
