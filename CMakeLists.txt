@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(MemoryAuditor VERSION 0.7.0 LANGUAGES CXX)
+project(MemoryAuditor VERSION 0.8.0 LANGUAGES CXX)
 
 # The auditor uses native pointer-sized Windows query structures.
 # A 32-bit scanner cannot represent the complete x64 address space.
@@ -22,6 +22,7 @@ add_executable(MemoryAuditor
     src/MemoryScanner.cpp
     src/MemoryContext.cpp
     src/ScanComparison.cpp
+    src/AccessAssessment.cpp
 )
 
 # Make header files accessible to all source files.
@@ -30,7 +31,7 @@ target_include_directories(MemoryAuditor PRIVATE
 )
 
 # GetMappedFileNameW queries file association using the existing query handle.
-target_link_libraries(MemoryAuditor PRIVATE psapi)
+target_link_libraries(MemoryAuditor PRIVATE psapi advapi32)
 
 # Enable compiler warnings.
 if(MINGW)
@@ -100,6 +101,26 @@ if(BUILD_TESTING)
 
     add_test(NAME MemoryScanComparison COMMAND ComparisonTests)
     set_tests_properties(MemoryScanComparison PROPERTIES TIMEOUT 30)
+
+    # Owned child fixtures validate fresh-handle grants, DACL denials, exit, and cleanup.
+    add_executable(AccessAssessmentTests
+        tests/AccessAssessmentTests.cpp
+        src/AccessAssessment.cpp
+        src/ScanComparison.cpp
+        src/MemoryScanner.cpp
+        src/MemoryContext.cpp
+    )
+    target_include_directories(AccessAssessmentTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(AccessAssessmentTests PRIVATE psapi advapi32)
+
+    if(MINGW)
+        target_compile_options(AccessAssessmentTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    add_test(NAME CurrentCallerAccessAssessment COMMAND AccessAssessmentTests)
+    set_tests_properties(CurrentCallerAccessAssessment PROPERTIES TIMEOUT 30)
 
     # This fixture waits for console input and is not an automated test.
     add_executable(MemoryTest tests/MemoryTest.cpp)
