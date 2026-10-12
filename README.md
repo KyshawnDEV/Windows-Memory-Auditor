@@ -1,4 +1,4 @@
-# Windows Memory Auditor v0.6
+# Windows Memory Auditor v0.7
 
 Author: KyshawnDEV
 
@@ -17,8 +17,52 @@ code storage and execution exposure. It is not an antivirus or malware classifie
   statistics, investigation priorities, and reports.
 - `MemoryContext.cpp`: allocation grouping, Tool Help module snapshots,
   mapped-file paths, and context reporting.
+- `ScanComparison.cpp`: timed snapshots, process identity verification,
+  conservative address-range comparisons, and bounded session history.
 - `include/`: region metadata, scan results, exposure categories, statistics,
   priority counters, and Windows handle ownership.
+
+## Repeated-scan comparisons
+
+v0.7 uses the existing scan-by-PID option. The first complete, identity-verified
+scan becomes that PID's baseline. Scanning it again displays a comparison
+against the most recent complete baseline, then replaces that baseline only
+if the new scan is complete and its identity is verified. There is no background
+polling or automatic rescan; repeat the menu operation when another sample is wanted.
+
+History remains in memory for this console session and retains up to eight
+targets, evicting the least recently updated baseline when necessary. It is
+not saved to disk. Partial and failed scans never replace a complete baseline.
+Comparisons use all collected regions regardless of the selected display filter.
+
+Each memory walk records UTC start/end times and a duration from a monotonic
+clock. Process identity uses PID plus the creation time obtained from
+`GetProcessTimes()` on the opened query-only handle. A reused PID with a
+different creation time is not compared to the previous process instance.
+If identity cannot be verified, memory reporting still works but comparison
+and baseline storage are skipped.
+
+Comparisons report added/removed committed address ranges, current protection
+differences, exposure-category differences, priority differences, and changes
+in allocation metadata. Overlapping intervals are compared instead of matching
+whole `VirtualQueryEx()` rows: a protection-induced split or merge does not
+create false additions/removals. Adjacent intervals with identical differences
+are combined; counts represent sampled address ranges, not OS events.
+
+Missing committed ranges count as added or removed only when the opposite scan
+has complete coverage of those addresses. Otherwise they are explicitly
+unobserved. A partial current scan can still show positive observations and
+attribute differences against a complete baseline, but cannot establish removals.
+Failed scans are not compared. Invalid, overlapping, or overflowing region
+records are rejected rather than producing ambiguous comparisons.
+
+Matching addresses, allocation bases, types, and allocation protections do
+not prove allocation continuity. Memory may be released and recreated with
+identical metadata between samples. Differences in allocation metadata are
+reported separately; no allocation lifetime, injection event, or causality is
+inferred. "Removed committed range" can mean decommitment rather than release
+of the reservation. Intermediate changes, content-only changes, and brief
+write/execute windows between scans are not detected.
 
 ## Allocation and module context
 
@@ -144,6 +188,12 @@ context, Unicode reporting, and live image/readonly file mappings. Both test
 programs run through CTest. Live fixtures currently validate native x64 targets;
 live WOW64 validation remains outstanding.
 
+`ComparisonTests` checks process identity/PID reuse, interval splits/merges,
+coverage boundaries, incomplete scans, baseline retention/eviction, timestamps,
+report wording, and controlled live protection/commitment/decommitment changes.
+These fixture mutations occur inside the test process; scanner snapshots
+still use only `PROCESS_QUERY_INFORMATION`. All three test programs run through CTest.
+
 ## Version history
 
 - **v0.4.1:** stale comment updates, EOF handling, enumeration error reporting,
@@ -154,9 +204,11 @@ live WOW64 validation remains outstanding.
 - **v0.6:** original allocation bases, allocation context headers, loader module
   associations, mapped-file paths, explicit context availability, a more precise
   no-permission label, and automated context tests.
+- **v0.7:** timed snapshots, creation-time process identity, repeated comparisons
+  against complete session baselines, interval-based differences, conservative
+  partial coverage handling, and automated comparison tests.
 
-The next planned milestone is **v0.7: repeated-scan comparisons**. External
-access assessment remains a separate future milestone.
+External access assessment remains a separate future milestone, tentatively v0.8.
 
 Windows API references: [VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex),
 [memory protection constants](https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants),
@@ -164,3 +216,4 @@ and [process access rights](https://learn.microsoft.com/en-us/windows/win32/proc
 Context references: [MEMORY_BASIC_INFORMATION](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-memory_basic_information),
 [module snapshots](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot),
 and [GetMappedFileNameW](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew).
+Comparison identity reference: [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes).
