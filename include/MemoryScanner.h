@@ -8,6 +8,7 @@
 #include "AuditMetrics.h"
 #include "MemoryRegion.h"
 #include "MemoryExposure.h"
+#include "MemoryContext.h"
 #include "MemoryStatistics.h"
 #include "ScanResult.h"
 
@@ -21,6 +22,10 @@
  *   - Ordinary write and copy-on-write classification
  *   - Private, image, and mapped executable categories
  *   - Investigation priorities independent of access rights
+ *
+ * Version 0.6 adds:
+ *   - Original allocation bases and allocation grouping
+ *   - Observed module and mapped-file context
  */
 
 // Controls which memory regions appear in the report.
@@ -56,7 +61,8 @@ ScanResult enumerateMemoryRegions(HANDLE process);
 MemoryStatistics calculateMemoryStatistics(const std::vector<MemoryRegion>& regions);
 
 // Display the memory region table using a selected filter.
-void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilter filter);
+void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilter filter,
+    const MemoryContext* context = nullptr);
 
 // Display scan status, memory statistics, and findings.
 void displayAuditSummary( const ScanResult& result, const MemoryStatistics& statistics, const AuditMetrics& metrics);
