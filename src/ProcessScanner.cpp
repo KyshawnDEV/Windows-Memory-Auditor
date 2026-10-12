@@ -1,83 +1,52 @@
 
 #include "ProcessScanner.h"
+#include "MemoryScanner.h"
 #include "AuditMetrics.h"
 
 #include <iostream>
+#include <vector>
 
 /*
  * ProcessScanner.cpp
  *
- * Implements process inspection functionality.
+ * Manages access to the target Windows process.
  *
- * This component is responsible for interacting with
- * Windows processes through the Windows API.
+ * Responsibilities:
+ *   - Open the target process
+ *   - Verify process access
+ *   - Invoke memory enumeration
+ *   - Invoke memory analysis
+ *   - Release the process handle
  *
- * Current implementation:
- *   - OpenProcess()
- *   - GetLastError()
- *   - CloseHandle()
- *
- * Future implementation:
- *   - VirtualQueryEx()
- *   - Memory protection analysis
- *   - Audit finding classification
+ * Memory enumeration and analysis are implemented
+ * separately in MemoryScanner.cpp.
  */
 
-/*
- * scanProcess()
- *
- * Opens a process using its PID.
- *
- * Parameters:
- *   pid - Windows process identifier.
- */
 void scanProcess(DWORD pid)
 {
     std::cout << "\n[INFO] Opening process "
               << pid << "...\n";
 
     // --------------------------------------------------------
-    // STEP 1: OPEN TARGET PROCESS
+    // STEP 1: OPEN THE TARGET PROCESS
     // --------------------------------------------------------
 
     /*
-     * OpenProcess() requests a handle to the target process.
-     *
      * PROCESS_QUERY_INFORMATION:
-     *   Requests permission to query process information,
-     *   including virtual memory metadata.
+     *   Allows querying the target's memory metadata.
      *
-     * FALSE:
-     *   Prevents child processes from inheriting the handle.
-     *
-     * pid:
-     *   Identifies the process selected by the user.
+     * No process memory write permissions are requested.
      */
-    HANDLE process = OpenProcess(
-        PROCESS_QUERY_INFORMATION,
-        FALSE,
-        pid
-    );
+    HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
 
     // --------------------------------------------------------
     // STEP 2: VERIFY PROCESS ACCESS
     // --------------------------------------------------------
 
-    /*
-     * OpenProcess() returns NULL if it fails.
-     *
-     * Possible reasons:
-     *   - Invalid PID
-     *   - Process no longer exists
-     *   - Insufficient permissions
-     *   - Protected Windows process
-     */
     if (process == nullptr)
     {
         std::cerr << "[ERROR] Unable to open process.\n";
-        std::cerr << "[ERROR] Windows error code: "
-                  << GetLastError() << '\n';
-
+        std::cerr << "[ERROR] Windows error code: " << GetLastError() << '\n';
         return;
     }
 
@@ -88,48 +57,43 @@ void scanProcess(DWORD pid)
     // --------------------------------------------------------
 
     /*
-     * Each scan receives its own AuditMetrics object.
+     * Each scan gets its own counters.
      *
-     * Future memory analysis functions will update these
-     * counters when findings are discovered.
+     * Results from previous scans are not carried over.
      */
     AuditMetrics metrics{};
 
-    // Temporarily suppress unused variable warnings.
-    (void)metrics;
+    // --------------------------------------------------------
+    // STEP 4: ENUMERATE MEMORY REGIONS
+    // --------------------------------------------------------
 
-    // --------------------------------------------------------
-    // STEP 4: MEMORY ENUMERATION (FUTURE)
-    // --------------------------------------------------------
+    std::cout << "[INFO] Enumerating virtual memory...\n";
 
     /*
-     * Planned implementation:
-     *
-     * 1. Enumerate virtual memory regions using VirtualQueryEx().
-     * 2. Identify memory protection flags.
-     * 3. Determine which regions are executable.
-     * 4. Identify writable and executable regions.
-     * 5. Record findings using AuditMetrics.
-     *
-     * Note:
-     *   A writable/executable region does not necessarily
-     *   represent an exploitable vulnerability.
+     * Collect committed virtual memory regions.
      */
+    std::vector<MemoryRegion> regions = enumerateMemoryRegions(process);
 
-    std::cout << "\n[INFO] Memory scanning will be "
-              << "implemented next.\n";
+    std::cout << "[INFO] Collected " << regions.size() << " committed regions.\n";
 
     // --------------------------------------------------------
-    // STEP 5: RELEASE PROCESS HANDLE
+    // STEP 5: ANALYZE MEMORY REGIONS
     // --------------------------------------------------------
 
     /*
-     * CloseHandle() releases the handle obtained from
-     * OpenProcess().
-     *
-     * This does not terminate the target process.
+     * Examine protection flags and update findings.
+     */
+    analyzeMemoryRegions(regions, metrics);
+
+    // --------------------------------------------------------
+    // STEP 6: RELEASE PROCESS HANDLE
+    // --------------------------------------------------------
+
+    /*
+     * CloseHandle() releases our reference to the process.
+     * It does not terminate the target application.
      */
     CloseHandle(process);
 
-    std::cout << "[SUCCESS] Process handle closed.\n";
+    std::cout << "\n[SUCCESS] Process handle closed.\n";
 }
