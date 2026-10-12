@@ -1,4 +1,4 @@
-# Windows Memory Auditor v0.7
+# Windows Memory Auditor v0.8
 
 Author: KyshawnDEV
 
@@ -19,8 +19,73 @@ code storage and execution exposure. It is not an antivirus or malware classifie
   mapped-file paths, and context reporting.
 - `ScanComparison.cpp`: timed snapshots, process identity verification,
   conservative address-range comparisons, and bounded session history.
+- `AccessAssessment.cpp`: optional current-caller fresh-handle access probes,
+  caller security metadata, granted-mask inspection, and scope reporting.
 - `include/`: region metadata, scan results, exposure categories, statistics,
   priority counters, and Windows handle ownership.
+
+## Current-caller access assessment
+
+v0.8 adds main-menu option **3: Assess current-caller process access by PID**.
+It is independent of scanning, filters, exposure priorities, and scan history.
+Option 2 continues to open only a query handle for metadata scanning.
+Option 3 obtains separate capability-bearing handles and closes them without
+reading/writing target memory, changing protections, or creating target threads.
+
+The assessment records UTC start/end times and the effective caller context:
+process or thread impersonation token, user SID, integrity RID, elevation,
+restricted SIDs, AppContainer state/package SID, enabled privileges, and the
+observed state of `SeDebugPrivilege`. It reads tokens only with `TOKEN_QUERY`.
+It does not enable or disable privileges, elevate, or impersonate another caller.
+Unavailable metadata stays explicitly unavailable instead of becoming a default.
+
+Eight independent fresh-handle profiles are tested:
+
+| Profile | Capability rights requested |
+|---|---|
+| Limited query | `PROCESS_QUERY_LIMITED_INFORMATION` |
+| Memory query | `PROCESS_QUERY_INFORMATION` |
+| Read-related | `PROCESS_VM_READ` |
+| Write-related | `PROCESS_VM_WRITE` |
+| Memory operations | `PROCESS_VM_OPERATION` |
+| Write + operations | `PROCESS_VM_WRITE \| PROCESS_VM_OPERATION` |
+| Thread creation | `PROCESS_CREATE_THREAD` |
+| Write + operations + thread | `PROCESS_VM_WRITE \| PROCESS_VM_OPERATION \| PROCESS_CREATE_THREAD` |
+
+Every profile additionally includes `PROCESS_QUERY_LIMITED_INFORMATION` for
+PID/creation-time verification on the returned handle. Reports show the exact
+requested mask. Denial applies to that combined request, not proof that one
+isolated capability is denied. A separate retained anchor requests limited
+query plus `SYNCHRONIZE` for identity and zero-time process-exit checks. If
+the anchor cannot be obtained, capability profiles remain **not attempted**.
+
+Returned handles are inspected with dynamically resolved `NtQueryObject()`
+`ObjectBasicInformation`. The reported granted mask must contain all requested
+bits before a profile is labeled **requested handle rights verified**. This
+accounts for object callbacks that can reduce access on a successful open.
+If fewer rights are present, the report says so. If native mask inspection is
+unavailable, it reports only that a handle was returned and leaves grants
+unknown. Native NTSTATUS errors are labeled separately from Win32 errors.
+
+Caller token identity/security-modification identifiers are checked before and
+after each probe. Changed or unverifiable caller contexts stop further probes.
+PID and process creation time are checked against the anchor; mismatches and
+process exits also stop assessment. Checks are sampled observations, not an
+atomic lock on the caller or target. Probe handles are closed immediately,
+with cleanup failures reported separately. `PROCESS_ALL_ACCESS` is not requested.
+
+**Complete** means all profiles were attempted, not that all were granted.
+`ERROR_ACCESS_DENIED` is reported as request denial; invalid PIDs and other API
+failures remain distinct failures. The assessment does not diagnose whether
+a denial came from an ACL, integrity policy, AppContainer restrictions,
+protected-process restrictions, or another enforcement mechanism.
+
+Results apply only to this caller's fresh opens at the recorded time. Existing,
+inherited, or duplicated handles and other callers are not enumerated. A
+verified write-related handle mask does not prove that a particular region
+can be modified or that an execution/injection path would succeed. The
+assessment does not attempt `WriteProcessMemory`, `VirtualProtectEx`, or
+`CreateRemoteThread`, and does not change memory-exposure priorities.
 
 ## Repeated-scan comparisons
 
@@ -132,7 +197,8 @@ ranges, not resident physical RAM or the process's private commit charge.
 
 ## Console filters
 
-The main menu retains process listing, scanning by PID, and exit. After a scan:
+The main menu offers process listing, scanning by PID, optional current-caller
+access assessment by PID, and exit. After a memory scan:
 
 1. All committed regions.
 2. Executable regions, including guarded and executable COW regions.
@@ -143,10 +209,12 @@ The selected display filter does not change overall statistics or priorities.
 
 ## Access and scan limitations
 
-The auditor requests only `PROCESS_QUERY_INFORMATION`. It does not read memory
+Memory scanning requests only `PROCESS_QUERY_INFORMATION`. It does not read memory
 contents, write memory, change protections, create threads, or suspend targets.
-External write access is **not assessed**: region permissions do not determine
-which other processes can obtain access rights to the target.
+External write access is **not assessed by the memory scan**: region permissions
+do not determine which other processes can obtain access rights to the target.
+The optional v0.8 operation separately assesses this caller's fresh handle
+requests; it does not establish arbitrary external callers' access or region-level writability.
 
 `MEM_PRIVATE` is a region type, not a complete inventory of physically private
 pages. Modified COW pages can still be reported as `MEM_IMAGE` or `MEM_MAPPED`.
@@ -184,7 +252,7 @@ auditor testing.
 
 `ContextTests` checks grouping across protection changes and reserved gaps,
 missing bases, module range validation, unchanged priorities, unavailable
-context, Unicode reporting, and live image/readonly file mappings. Both test
+context, Unicode reporting, and live image/readonly file mappings. These test
 programs run through CTest. Live fixtures currently validate native x64 targets;
 live WOW64 validation remains outstanding.
 
@@ -192,7 +260,19 @@ live WOW64 validation remains outstanding.
 coverage boundaries, incomplete scans, baseline retention/eviction, timestamps,
 report wording, and controlled live protection/commitment/decommitment changes.
 These fixture mutations occur inside the test process; scanner snapshots
-still use only `PROCESS_QUERY_INFORMATION`. All three test programs run through CTest.
+still use only `PROCESS_QUERY_INFORMATION`.
+
+`AccessAssessmentTests` checks exact masks, open-error meanings, granted-mask
+subset logic, effective process/thread tokens, unchanged caller fingerprints,
+handle cleanup, and owned normal/restricted/exited child processes. The
+restricted child grants query/read/synchronize to the caller's package when
+running in an AppContainer, while retaining write/operation/thread denials.
+An already enabled `SeDebugPrivilege` can bypass that fixture DACL; the test
+reports this and omits that live denial expectation without changing privileges.
+The child deliberately exits with code 259 to check synchronization-based exit
+detection. Synthetic reports cover changed callers and unknown granted masks.
+All four test programs run through CTest. Real protected-process/PPL policy
+combinations are not exhaustively validated by these controlled fixtures.
 
 ## Version history
 
@@ -207,8 +287,11 @@ still use only `PROCESS_QUERY_INFORMATION`. All three test programs run through 
 - **v0.7:** timed snapshots, creation-time process identity, repeated comparisons
   against complete session baselines, interval-based differences, conservative
   partial coverage handling, and automated comparison tests.
+- **v0.8:** optional current-caller access assessment, exact fresh-handle profiles,
+  effective token metadata, granted-mask inspection, conservative verification,
+  and automated access assessment tests.
 
-External access assessment remains a separate future milestone, tentatively v0.8.
+Broader assessment for other callers and existing handles remains future work.
 
 Windows API references: [VirtualQueryEx](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex),
 [memory protection constants](https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants),
@@ -217,3 +300,7 @@ Context references: [MEMORY_BASIC_INFORMATION](https://learn.microsoft.com/en-us
 [module snapshots](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-createtoolhelp32snapshot),
 and [GetMappedFileNameW](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getmappedfilenamew).
 Comparison identity reference: [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes).
+Access assessment references: [OpenProcess](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-openprocess),
+[GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation),
+[NtQueryObject](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntqueryobject),
+and [object callback access reduction](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/ns-wdm-_ob_pre_create_handle_information).
