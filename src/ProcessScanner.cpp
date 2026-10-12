@@ -186,7 +186,7 @@ void scanProcess(DWORD pid, ScanHistory& history)
     }
     else
     {
-        std::cout << "[INFO] Baseline not updated: scan incomplete or process identity unavailable.\n";
+        std::cout << "[INFO] Baseline not updated: scan completeness, identity, or region data could not be validated.\n";
     }
 
     // --------------------------------------------------------
