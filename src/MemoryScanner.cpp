@@ -896,7 +896,8 @@ void displayAuditSummary(const ScanResult& result, const MemoryStatistics& stati
         << "[INFO] High: private W+X. Medium: other W+X or private executable.\n"
         << "[INFO] Low: executable copy-on-write, executable memory of unknown type, or unknown protection.\n"
         << "[INFO] JIT runtimes and other legitimate applications can use private executable memory.\n"
-        << "[INFO] External write access: NOT ASSESSED. Region permissions alone do not establish it.\n"
+        << "[INFO] External write access: NOT ASSESSED by this memory scan. Option 3 reports current-caller handle access.\n"
+        << "[INFO] Region permissions alone do not establish another process's access rights.\n"
         << "[INFO] Guarded regions retain base permission classification; immediate access is not implied.\n"
         << "[INFO] MEM_PRIVATE is a reported region type; modified COW pages can remain IMAGE or MAPPED.\n"
         << "[INFO] Statistics describe observed committed virtual memory, not physical RAM or a frozen snapshot.\n";
