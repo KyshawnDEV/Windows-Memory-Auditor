@@ -9,7 +9,7 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.5
+ * Windows Memory Auditor v0.6
  * Author: KyshawnDEV
  *
  * Purpose:
@@ -30,6 +30,7 @@
  *   - W+X findings requiring review
  *   - Separate ordinary write and copy-on-write accounting
  *   - Executable region exposure and investigation priorities
+ *   - Allocation grouping and observed module/file context
  *   - Committed memory statistics
  *   - Memory region display filters
  *   - Complete, partial, and failed scan reporting
