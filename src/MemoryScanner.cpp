@@ -340,11 +340,11 @@ void analyzeMemoryRegions(
     std::cout << "\n================ MEMORY REGIONS ================\n\n";
 
     std::cout << std::left
-              << std::setw(20) << "BASE ADDRESS"
-              << std::setw(14) << "SIZE"
-              << std::setw(12) << "TYPE"
-              << std::setw(16) << "PROTECTION"
-              << "FINDING\n";
+          << std::setw(20) << "BASE ADDRESS"
+          << std::setw(14) << "SIZE"
+          << std::setw(12) << "TYPE"
+          << std::setw(16) << "PROTECTION"
+          << "FINDING\n";
 
     std::cout << std::string(85, '-') << '\n';
 
@@ -358,16 +358,23 @@ void analyzeMemoryRegions(
         bool suspicious = isWritableExecutable(region.protection);
 
         std::cout << "0x"
-                  << std::hex << std::uppercase
-                  << std::setw(18) << std::setfill('0')
-                  << region.baseAddress
-                  << std::setfill(' ')
-                  << std::dec << std::left
-                  << std::setw(14) << region.regionSize
-                  << std::setw(12)
-                  << memoryTypeToString(region.type)
-                  << std::setw(16)
-                  << protectionToString(region.protection);
+          << std::hex
+          << std::uppercase
+          << std::right
+          << std::setfill('0')
+          << std::setw(sizeof(uintptr_t) * 2)
+          << region.baseAddress
+
+          // Restore normal decimal formatting.
+          << std::dec
+          << std::setfill(' ')
+          << std::left
+
+          // Display region information.
+          << "  "
+          << std::setw(14) << region.regionSize
+          << std::setw(12) << memoryTypeToString(region.type)
+          << std::setw(16) << protectionToString(region.protection);
 
         if (suspicious)
         {
