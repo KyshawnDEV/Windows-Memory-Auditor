@@ -10,6 +10,7 @@
 enum class ExposureCategory
 {
     None,
+    UnknownProtection,
     Writable,
     CopyOnWrite,
     PrivateExecutable,
