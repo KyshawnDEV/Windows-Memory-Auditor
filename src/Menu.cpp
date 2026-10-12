@@ -6,25 +6,19 @@
 /*
  * Menu.cpp
  *
- * Implements the application's console menu.
+ * Implements the console interface for MemoryAuditor.
  *
- * Future versions may include:
- *   - List running processes
- *   - Scan processes by name
- *   - View previous scan results
- *   - Configure audit settings
+ * Version 0.2 adds process enumeration.
  */
 
-/*
- * Displays the main menu for the Windows Memory Auditor.
- */
 void displayMenu()
 {
     std::cout << "\n========================================\n";
-    std::cout << "       WINDOWS MEMORY AUDITOR v0.1\n";
+    std::cout << "       WINDOWS MEMORY AUDITOR v0.2\n";
     std::cout << "========================================\n\n";
 
-    std::cout << "[1] Scan a process\n";
+    std::cout << "[1] List running processes\n";
+    std::cout << "[2] Scan a process by PID\n";
     std::cout << "[0] Exit\n\n";
 
     std::cout << "Make your menu selection now: ";
