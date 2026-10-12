@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <string>
 
 /*
@@ -22,6 +23,10 @@
  *   - Classifies executable memory by its reported type
  *   - Preserves base permissions on guarded regions
  *   - Reports investigation priorities and analysis limitations
+ *
+ * Version 0.6:
+ *   - Preserves the allocation base returned by Windows
+ *   - Displays allocation context alongside filtered region rows
  *
  * The scanner does not read or modify memory contents.
  */
@@ -308,7 +313,7 @@ std::string exposureToString(ExposureCategory category)
 {
     switch (category)
     {
-        case ExposureCategory::None: return "No write/execute exposure";
+        case ExposureCategory::None: return "No current write/execute permissions observed";
         case ExposureCategory::UnknownProtection: return "Unknown base protection";
         case ExposureCategory::Writable: return "Writable (non-executable)";
         case ExposureCategory::CopyOnWrite: return "Copy-on-write (non-executable)";
@@ -535,6 +540,7 @@ ScanResult enumerateMemoryRegions(HANDLE process)
             MemoryRegion region{};
 
             region.baseAddress = baseAddress;
+            region.allocationBase = reinterpret_cast<std::uintptr_t>(mbi.AllocationBase);
             region.regionSize = mbi.RegionSize;
             region.state = mbi.State;
             region.protection = mbi.Protect;
@@ -652,7 +658,8 @@ MemoryStatistics calculateMemoryStatistics(const std::vector<MemoryRegion>& regi
 // MEMORY REGION DISPLAY
 // ============================================================
 
-void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilter filter)
+void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilter filter,
+    const MemoryContext* context)
 {
     std::cout << "\n================ MEMORY REGIONS ================\n\n";
 
@@ -686,8 +693,29 @@ void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilte
 
     std::size_t displayedRegions = 0;
 
-    for (const MemoryRegion& region : regions)
+    /*
+     * Index allocation context by the original region position.
+     * Context collection must not reorder regions or alter filtering.
+     * Print each allocation header only when a matching row is shown.
+     */
+    std::vector<const AllocationContext*> regionContexts(regions.size(), nullptr);
+    std::set<const AllocationContext*> displayedAllocations;
+
+    if (context != nullptr)
     {
+        for (const AllocationContext& allocation : context->allocations)
+        {
+            for (std::size_t index : allocation.regionIndices)
+            {
+                if (index < regionContexts.size())
+                    regionContexts[index] = &allocation;
+            }
+        }
+    }
+
+    for (std::size_t index = 0; index < regions.size(); index++)
+    {
+        const MemoryRegion& region = regions[index];
         MemoryExposure exposure = classifyMemoryExposure(region);
 
         // ----------------------------------------------------
@@ -699,6 +727,11 @@ void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilte
         }
 
         displayedRegions++;
+
+        const AllocationContext* allocation = regionContexts[index];
+
+        if (allocation != nullptr && displayedAllocations.insert(allocation).second)
+            displayAllocationContext(*allocation);
 
         // ----------------------------------------------------
         // PRINT REGION INFORMATION
