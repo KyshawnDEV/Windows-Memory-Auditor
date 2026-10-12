@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(MemoryAuditor VERSION 0.6.0 LANGUAGES CXX)
+project(MemoryAuditor VERSION 0.7.0 LANGUAGES CXX)
 
 # The auditor uses native pointer-sized Windows query structures.
 # A 32-bit scanner cannot represent the complete x64 address space.
@@ -21,6 +21,7 @@ add_executable(MemoryAuditor
     src/ProcessEnumerator.cpp
     src/MemoryScanner.cpp
     src/MemoryContext.cpp
+    src/ScanComparison.cpp
 )
 
 # Make header files accessible to all source files.
@@ -80,6 +81,25 @@ if(BUILD_TESTING)
 
     add_test(NAME MemoryAllocationContext COMMAND ContextTests)
     set_tests_properties(MemoryAllocationContext PROPERTIES TIMEOUT 30)
+
+    # Comparison tests include process identity, partial coverage, and live protection changes.
+    add_executable(ComparisonTests
+        tests/ComparisonTests.cpp
+        src/ScanComparison.cpp
+        src/MemoryScanner.cpp
+        src/MemoryContext.cpp
+    )
+    target_include_directories(ComparisonTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ComparisonTests PRIVATE psapi)
+
+    if(MINGW)
+        target_compile_options(ComparisonTests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+
+    add_test(NAME MemoryScanComparison COMMAND ComparisonTests)
+    set_tests_properties(MemoryScanComparison PROPERTIES TIMEOUT 30)
 
     # This fixture waits for console input and is not an automated test.
     add_executable(MemoryTest tests/MemoryTest.cpp)
