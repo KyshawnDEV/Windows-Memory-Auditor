@@ -79,6 +79,8 @@ enum class AccessProbeOutcome
 {
     NotAttempted,
     Obtained,
+    RightsReduced,
+    GrantedMaskUnavailable,
     Denied,
     OpenFailed,
     VerificationFailed,
@@ -93,6 +95,10 @@ struct AccessProbeResult
     AccessProbeOutcome outcome = AccessProbeOutcome::NotAttempted;
     bool attempted = false;
     bool handleObtained = false;
+    bool grantedMaskAvailable = false;
+    DWORD grantedAccess = 0;
+    DWORD grantedMaskErrorCode = ERROR_SUCCESS;
+    DWORD grantedMaskNtStatus = 0;
     DWORD openErrorCode = ERROR_SUCCESS;
     DWORD verificationErrorCode = ERROR_SUCCESS;
     DWORD cleanupErrorCode = ERROR_SUCCESS;
@@ -133,6 +139,7 @@ bool sameCallerFingerprint(const CallerFingerprint& left, const CallerFingerprin
 // Fixed, explicit masks avoid PROCESS_ALL_ACCESS and keep each request independently reportable.
 const std::vector<AccessProbeDefinition>& accessProbeDefinitions();
 AccessProbeOutcome accessOutcomeFromOpenError(DWORD errorCode);
+AccessProbeOutcome accessOutcomeFromGrantedMask(DWORD requested, DWORD granted);
 
 // Obtain and immediately close probe handles without exercising their capabilities.
 AccessAssessment assessProcessAccess(DWORD pid);
