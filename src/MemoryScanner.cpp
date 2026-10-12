@@ -334,8 +334,7 @@ std::vector<MemoryRegion> enumerateMemoryRegions(HANDLE process)
  *   regions - Memory regions collected by the scanner.
  *   metrics - Audit counters updated by this function.
  */
-void analyzeMemoryRegions(
-    const std::vector<MemoryRegion>& regions, AuditMetrics& metrics)
+void analyzeMemoryRegions(const std::vector<MemoryRegion>& regions, AuditMetrics& metrics)
 {
     std::cout << "\n================ MEMORY REGIONS ================\n\n";
 
