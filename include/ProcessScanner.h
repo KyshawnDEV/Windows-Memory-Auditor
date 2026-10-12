@@ -16,6 +16,7 @@
  *   - Record memory exposure investigation priorities
  *   - Select a memory region display filter
  *   - Display scan status and audit results
+ *   - Collect and display allocation, module, and mapped-file context
  *   - Release the process handle
  *
  * Memory enumeration, analysis, and reporting are
