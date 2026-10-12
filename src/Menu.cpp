@@ -19,11 +19,12 @@
 void displayMenu()
 {
     std::cout << "\n========================================\n";
-    std::cout << "       WINDOWS MEMORY AUDITOR v0.7\n";
+    std::cout << "       WINDOWS MEMORY AUDITOR v0.8\n";
     std::cout << "========================================\n\n";
 
     std::cout << "[1] List running processes\n";
     std::cout << "[2] Scan a process by PID\n";
+    std::cout << "[3] Assess current-caller process access by PID\n";
     std::cout << "[0] Exit\n\n";
 
     std::cout << "Make your menu selection now: ";

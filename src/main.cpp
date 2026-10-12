@@ -3,6 +3,7 @@
 #include "ProcessEnumerator.h"
 #include "ProcessScanner.h"
 #include "ScanComparison.h"
+#include "AccessAssessment.h"
 
 #include <windows.h>
 #include <iostream>
@@ -10,7 +11,7 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.7
+ * Windows Memory Auditor v0.8
  * Author: KyshawnDEV
  *
  * Purpose:
@@ -33,6 +34,7 @@
  *   - Executable region exposure and investigation priorities
  *   - Allocation grouping and observed module/file context
  *   - Timed snapshots and repeated-scan comparisons
+ *   - Optional current-caller process access assessment
  *   - Committed memory statistics
  *   - Memory region display filters
  *   - Complete, partial, and failed scan reporting
@@ -40,6 +42,8 @@
  * Scanning Behavior:
  *   Queries memory metadata without reading or modifying
  *   the target process's memory contents.
+ *   Access assessment obtains separate capability-bearing
+ *   handles, verifies identity, and closes them without use.
  *
  * Platform:
  *   Windows x86-64
@@ -139,7 +143,7 @@ int main()
         unsigned long long selection = 0;
 
         // Read and validate the menu selection.
-        if (!readUnsignedInteger(selection, 2))
+        if (!readUnsignedInteger(selection, 3))
         {
             /*
              * A closed or failed input stream cannot provide
@@ -188,6 +192,30 @@ int main()
                 DWORD pid = static_cast<DWORD>(inputPid);
 
                 scanProcess(pid, history);
+                break;
+            }
+
+            // ------------------------------------------------
+            // OPTION 3: ASSESS CURRENT-CALLER PROCESS ACCESS
+            // ------------------------------------------------
+            case 3:
+            {
+                unsigned long long inputPid = 0;
+                std::cout << "\nEnter target PID for current-caller access assessment: ";
+
+                if (!readUnsignedInteger(inputPid, std::numeric_limits<DWORD>::max()) || inputPid == 0)
+                {
+                    std::cout << "[ERROR] Invalid PID.\n";
+                    break;
+                }
+
+                /*
+                 * Keep this optional operation separate from memory scanning.
+                 * It requests process rights but never exercises them, and
+                 * cannot replace a memory baseline or change its priorities.
+                 */
+                AccessAssessment assessment = assessProcessAccess(static_cast<DWORD>(inputPid));
+                displayAccessAssessment(assessment);
                 break;
             }
 
