@@ -3,7 +3,9 @@
 #include "WindowsHandle.h"
 
 #include <sddl.h>
+#include <winternl.h>
 #include <cstddef>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -379,6 +381,67 @@ AccessProbeOutcome accessOutcomeFromOpenError(DWORD errorCode)
     return errorCode == ERROR_ACCESS_DENIED ? AccessProbeOutcome::Denied : AccessProbeOutcome::OpenFailed;
 }
 
+AccessProbeOutcome accessOutcomeFromGrantedMask(DWORD requested, DWORD granted)
+{
+    return (granted & requested) == requested ? AccessProbeOutcome::Obtained : AccessProbeOutcome::RightsReduced;
+}
+
+/*
+ * queryGrantedMask()
+ *
+ * OpenProcess returning a handle is not enough to verify its rights:
+ * object callbacks can reduce the requested access. The documented
+ * NtQueryObject ObjectBasicInformation result exposes GrantedAccess.
+ *
+ * Resolve this native API dynamically because Microsoft documents that
+ * it may change or become unavailable. Only handle metadata is queried.
+ * If inspection fails, report an unknown mask rather than assuming grants.
+ */
+static bool queryGrantedMask(HANDLE process, AccessProbeResult& probe)
+{
+    using QueryObject = NTSTATUS (NTAPI*)(HANDLE, OBJECT_INFORMATION_CLASS, PVOID, ULONG, PULONG);
+    HMODULE module = GetModuleHandleW(L"ntdll.dll");
+
+    if (module == nullptr)
+    {
+        probe.grantedMaskErrorCode = GetLastError();
+        return false;
+    }
+
+    FARPROC address = GetProcAddress(module, "NtQueryObject");
+
+    if (address == nullptr)
+    {
+        probe.grantedMaskErrorCode = GetLastError();
+        return false;
+    }
+
+    // Windows function pointers share representation; copy avoids incompatible-cast warnings.
+    QueryObject query = nullptr;
+    static_assert(sizeof(query) == sizeof(address), "Unexpected Windows function pointer representation");
+    std::memcpy(&query, &address, sizeof(query));
+    PUBLIC_OBJECT_BASIC_INFORMATION information{};
+    ULONG returned = 0;
+    NTSTATUS status = query(process, ObjectBasicInformation, &information, sizeof(information), &returned);
+
+    if (status < 0)
+    {
+        // NTSTATUS is not a GetLastError() value; preserve and label it separately.
+        probe.grantedMaskNtStatus = static_cast<DWORD>(status);
+        return false;
+    }
+
+    if (returned < sizeof(information))
+    {
+        probe.grantedMaskErrorCode = ERROR_INVALID_DATA;
+        return false;
+    }
+
+    probe.grantedAccess = information.GrantedAccess;
+    probe.grantedMaskAvailable = true;
+    return true;
+}
+
 static bool processIdentity(HANDLE process, DWORD& pid, std::uint64_t& creationTime, DWORD& errorCode)
 {
     pid = GetProcessId(process);
@@ -505,6 +568,7 @@ static void runAccessProbes(AccessAssessment& assessment)
             WindowsHandle owner(process);
             probe.handleObtained = true;
             std::uint64_t observedCreation = 0;
+            bool grantedKnown = queryGrantedMask(process, probe);
 
             if (!processIdentity(process, observedPid, observedCreation, probe.verificationErrorCode))
             {
@@ -516,7 +580,9 @@ static void runAccessProbes(AccessAssessment& assessment)
             }
             else
             {
-                probe.outcome = AccessProbeOutcome::Obtained;
+                probe.outcome = grantedKnown
+                    ? accessOutcomeFromGrantedMask(probe.definition.requestedAccess, probe.grantedAccess)
+                    : AccessProbeOutcome::GrantedMaskUnavailable;
             }
 
             // Close without using any read, write, operation, or thread capability.
@@ -692,7 +758,9 @@ void displayAccessAssessment(const AccessAssessment& assessment)
         switch (probe.outcome)
         {
             case AccessProbeOutcome::NotAttempted: std::cout << "NOT ATTEMPTED"; break;
-            case AccessProbeOutcome::Obtained: std::cout << "HANDLE ACCESS OBTAINED"; break;
+            case AccessProbeOutcome::Obtained: std::cout << "REQUESTED HANDLE RIGHTS VERIFIED"; break;
+            case AccessProbeOutcome::RightsReduced: std::cout << "HANDLE RETURNED WITH FEWER RIGHTS"; break;
+            case AccessProbeOutcome::GrantedMaskUnavailable: std::cout << "HANDLE RETURNED; GRANTED MASK UNAVAILABLE"; break;
             case AccessProbeOutcome::Denied: std::cout << "REQUEST DENIED"; break;
             case AccessProbeOutcome::OpenFailed: std::cout << "OPEN FAILED"; break;
             case AccessProbeOutcome::VerificationFailed: std::cout << "VERIFICATION FAILED"; break;
@@ -703,6 +771,18 @@ void displayAccessAssessment(const AccessAssessment& assessment)
 
         if (probe.attempted)
             std::cout << " | OpenProcess returned a handle: " << (probe.handleObtained ? "Yes" : "No");
+
+        if (probe.grantedMaskAvailable)
+            std::cout << " | Granted mask: 0x" << std::hex << std::uppercase << probe.grantedAccess << std::dec;
+        else if (probe.handleObtained)
+            std::cout << " | Granted mask: Unavailable";
+
+        if (probe.grantedMaskErrorCode != ERROR_SUCCESS)
+            std::cout << " | Granted-mask query error: " << probe.grantedMaskErrorCode;
+
+        if (probe.grantedMaskNtStatus != 0)
+            std::cout << " | Granted-mask query NTSTATUS: 0x" << std::hex << std::uppercase
+                      << probe.grantedMaskNtStatus << std::dec;
 
         if (probe.openErrorCode != ERROR_SUCCESS)
             std::cout << " | Open error: " << probe.openErrorCode;
@@ -717,6 +797,7 @@ void displayAccessAssessment(const AccessAssessment& assessment)
     }
 
     std::cout << "\n[INFO] Every profile includes limited query access for identity verification.\n";
+    std::cout << "[INFO] Returned handles are checked for granted rights; unavailable masks are not assumed to match the request.\n";
     std::cout << "[INFO] Denials apply to the exact requested mask; their cause is not diagnosed.\n";
     std::cout << "[INFO] Only this caller's fresh handle requests were assessed; other callers and existing handles were not.\n";
     std::cout << "[INFO] Probe capabilities were not exercised; no target memory or threads were changed.\n";
