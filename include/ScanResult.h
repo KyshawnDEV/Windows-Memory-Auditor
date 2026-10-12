@@ -48,5 +48,6 @@ struct ScanResult
 
     // Architecture and upper bound used by the query walk.
     bool targetWow64 = false;
+    std::uintptr_t minimumAddress = 0;
     std::uintptr_t maximumAddress = 0;
 };
