@@ -4,9 +4,11 @@
 #include "AuditMetrics.h"
 #include "WindowsHandle.h"
 #include "MemoryContext.h"
+#include "ScanComparison.h"
 
 #include <iostream>
 #include <string>
+#include <utility>
 
 /*
  * ProcessScanner.cpp
@@ -31,9 +33,14 @@
  * Version 0.6:
  *   - Groups committed regions by their original allocation
  *   - Adds module and mapped-file associations where available
+ *
+ * Version 0.7:
+ *   - Captures process identity and memory scan timestamps
+ *   - Compares repeated scans with complete session baselines
+ *   - Preserves baselines when later scans are incomplete
  */
 
-void scanProcess(DWORD pid)
+void scanProcess(DWORD pid, ScanHistory& history)
 {
     // --------------------------------------------------------
     // STEP 1: OPEN TARGET PROCESS
@@ -61,7 +68,9 @@ void scanProcess(DWORD pid)
 
     std::cout << "[INFO] Enumerating virtual memory...\n";
 
-    ScanResult result = enumerateMemoryRegions(process);
+    ScanSnapshot snapshot = captureMemorySnapshot(process);
+    const ScanResult& result = snapshot.memory;
+    displayScanTiming(snapshot);
 
     std::cout << "[INFO] Collected " << result.regions.size() << " committed regions.\n";
 
@@ -150,7 +159,38 @@ void scanProcess(DWORD pid)
     displayMemoryContextSummary(context);
 
     // --------------------------------------------------------
-    // STEP 7: RELEASE PROCESS HANDLE
+    // STEP 7: COMPARE AND RETAIN THE BASELINE
+    // --------------------------------------------------------
+
+    /*
+     * A saved baseline belongs to a PID and creation time.
+     * Comparison rejects a different process instance even if
+     * Windows has reused the PID. Display the comparison before
+     * replacing history, because its pointer belongs to history.
+     */
+    const ScanSnapshot* previous = history.find(pid);
+
+    if (previous != nullptr)
+    {
+        ScanComparison comparison = compareMemorySnapshots(*previous, snapshot);
+        displayScanComparison(*previous, snapshot, comparison);
+    }
+    else
+    {
+        std::cout << "\n[INFO] No complete baseline for this PID in the current session.\n";
+    }
+
+    if (history.remember(std::move(snapshot)))
+    {
+        std::cout << "[INFO] Complete scan saved as the baseline for the next scan of this PID.\n";
+    }
+    else
+    {
+        std::cout << "[INFO] Baseline not updated: scan incomplete or process identity unavailable.\n";
+    }
+
+    // --------------------------------------------------------
+    // STEP 8: RELEASE PROCESS HANDLE
     // --------------------------------------------------------
 
     /*

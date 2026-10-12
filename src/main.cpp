@@ -2,6 +2,7 @@
 #include "Menu.h"
 #include "ProcessEnumerator.h"
 #include "ProcessScanner.h"
+#include "ScanComparison.h"
 
 #include <windows.h>
 #include <iostream>
@@ -9,7 +10,7 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.6
+ * Windows Memory Auditor v0.7
  * Author: KyshawnDEV
  *
  * Purpose:
@@ -31,6 +32,7 @@
  *   - Separate ordinary write and copy-on-write accounting
  *   - Executable region exposure and investigation priorities
  *   - Allocation grouping and observed module/file context
+ *   - Timed snapshots and repeated-scan comparisons
  *   - Committed memory statistics
  *   - Memory region display filters
  *   - Complete, partial, and failed scan reporting
@@ -123,6 +125,13 @@ int main()
 {
     bool running = true;
 
+    /*
+     * Retain complete baselines for this console session only.
+     * Scanning a PID again compares against its saved baseline;
+     * no extra menu or background polling is required.
+     */
+    ScanHistory history;
+
     while (running)
     {
         displayMenu();
@@ -178,7 +187,7 @@ int main()
 
                 DWORD pid = static_cast<DWORD>(inputPid);
 
-                scanProcess(pid);
+                scanProcess(pid, history);
                 break;
             }
 

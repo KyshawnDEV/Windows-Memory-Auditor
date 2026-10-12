@@ -19,7 +19,7 @@
 void displayMenu()
 {
     std::cout << "\n========================================\n";
-    std::cout << "       WINDOWS MEMORY AUDITOR v0.6\n";
+    std::cout << "       WINDOWS MEMORY AUDITOR v0.7\n";
     std::cout << "========================================\n\n";
 
     std::cout << "[1] List running processes\n";

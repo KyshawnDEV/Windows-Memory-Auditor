@@ -443,6 +443,7 @@ ScanResult enumerateMemoryRegions(HANDLE process)
     }
 
     scanResult.maximumAddress = maximumAddress;
+    scanResult.minimumAddress = address;
 
     // --------------------------------------------------------
     // STEP 3: WALK THE VIRTUAL ADDRESS SPACE
