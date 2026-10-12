@@ -1,0 +1,8 @@
+[
+{
+  "directory": "C:/Users/Kyshawn/Desktop/Windows Memory Auditor/build",
+  "command": "C:\\msys64\\ucrt64\\bin\\g++.exe   -g -std=gnu++17 -Wall -Wextra -g -o CMakeFiles\\MemoryAuditor.dir\\main.cpp.obj -c \"C:\\Users\\Kyshawn\\Desktop\\Windows Memory Auditor\\main.cpp\"",
+  "file": "C:/Users/Kyshawn/Desktop/Windows Memory Auditor/main.cpp",
+  "output": "CMakeFiles/MemoryAuditor.dir/main.cpp.obj"
+}
+]

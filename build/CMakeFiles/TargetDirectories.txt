@@ -1,0 +1,3 @@
+C:/Users/Kyshawn/Desktop/Windows Memory Auditor/build/CMakeFiles/MemoryAuditor.dir
+C:/Users/Kyshawn/Desktop/Windows Memory Auditor/build/CMakeFiles/edit_cache.dir
+C:/Users/Kyshawn/Desktop/Windows Memory Auditor/build/CMakeFiles/rebuild_cache.dir
