@@ -5,7 +5,6 @@
 #include "WindowsHandle.h"
 
 #include <iostream>
-#include <limits>
 #include <string>
 
 /*
@@ -22,6 +21,11 @@
  * Version 0.4.1:
  *   - Releases handles if an exception interrupts scanning
  *   - Reports process handle cleanup failures
+ *
+ * Version 0.5:
+ *   - Uses shared memory exposure classification
+ *   - Reports investigation priorities instead of severity
+ *   - Adds a filter for all prioritized regions
  */
 
 void scanProcess(DWORD pid)
@@ -68,24 +72,16 @@ void scanProcess(DWORD pid)
     MemoryStatistics statistics = calculateMemoryStatistics(result.regions);
 
     // --------------------------------------------------------
-    // STEP 4: RECORD SECURITY FINDINGS
+    // STEP 4: RECORD INVESTIGATION PRIORITIES
     // --------------------------------------------------------
 
-    AuditMetrics metrics{};
-
     /*
-     * Each W+X region is currently classified as one
-     * medium-severity indicator requiring investigation.
-     *
-     * Clamp to int's maximum because AuditMetrics
-     * currently uses int counters.
+     * Apply the same classification used by the region table.
+     * Each region receives at most one investigation priority.
+     * These counts do not establish external memory access
+     * or confirm that an injection opportunity is exploitable.
      */
-    if (statistics.suspiciousRegions > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-        metrics.medium = std::numeric_limits<int>::max();
-    }
-    else {
-        metrics.medium = static_cast<int>(statistics.suspiciousRegions);
-    }
+    AuditMetrics metrics = calculateAuditMetrics(result.regions);
 
     // --------------------------------------------------------
     // STEP 5: SELECT DISPLAY FILTER
@@ -94,7 +90,8 @@ void scanProcess(DWORD pid)
     std::cout << "\n================ DISPLAY FILTER ================\n\n";
     std::cout << "[1] All committed regions\n";
     std::cout << "[2] Executable regions only\n";
-    std::cout << "[3] W+X regions requiring review\n\n";
+    std::cout << "[3] Ordinary W+X regions (excludes copy-on-write)\n";
+    std::cout << "[4] Regions requiring investigation\n\n";
     std::cout << "Select display filter: ";
 
     std::string selection;
@@ -113,7 +110,10 @@ void scanProcess(DWORD pid)
             filter = DisplayFilter::Executable;
         }
         else if (selection == "3") {
-            filter = DisplayFilter::Suspicious;
+            filter = DisplayFilter::WritableExecutable;
+        }
+        else if (selection == "4") {
+            filter = DisplayFilter::Review;
         }
         else if (selection != "1") {
             std::cout
