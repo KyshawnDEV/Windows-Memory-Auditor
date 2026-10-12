@@ -77,6 +77,86 @@ void displayMenu()
     std::cout << "Make your menu selection now: ";
 }
 
+//Process Scanning
+
+/*
+ * Opens a process using its PID.
+ *
+ * Parameters:
+ *   pid - Windows process identifier
+ *
+ * The function currently only verifies that the process
+ * can be opened. Memory enumeration will be added later.
+ */
+
+ void scanProcess(DWORD pid) {
+    std::cout << "\n[INFO] Opening process " << pid << "...\n";
+
+    /*
+     * OpenProcess() requests access to an existing process.
+     *
+     * PROCESS_QUERY_INFORMATION:
+     *   Allows us to query process information, including
+     *   virtual memory metadata using VirtualQueryEx().
+     *
+     * FALSE:
+     *   The handle will not be inherited by child processes.
+     *
+     * pid:
+     *   Identifies the process selected by the user.
+     */
+
+    HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+
+     /*
+     * If OpenProcess() fails, it returns NULL.0
+     *
+     * Possible causes:
+     *   - Invalid PID
+     *   - Process no longer exists
+     *   - Insufficient permissions
+     *   - Protected Windows process
+     */
+
+    if (process == nullptr)
+    {
+        std::cerr << "[ERROR] Unable to open process.\n";
+        std::cerr << "[ERROR] Windows error code: "
+                  << GetLastError() << '\n';
+        return;
+    }
+
+    std::cout << "[SUCCESS] Process opened successfully!\n";
+
+    //memory enumeration will be added here later.
+
+     /*
+     * Future implementation:
+     *
+     * 1. Enumerate the process's virtual memory regions.
+     * 2. Read each region's protection flags.
+     * 3. Identify executable memory.
+     * 4. Flag suspicious writable/executable regions.
+     * 5. Record findings using AuditMetrics.
+     */
+
+    AuditMetrics metrics{};
+
+    // Temporarily suppress unused variable warning.
+    (void)metrics;
+
+    std::cout << "\n[INFO] Memory scanning will be " << "implemented next.\n";
+
+    /*
+     * Release process handle.
+     *
+     * CloseHandle() does not terminate the target process.
+     */
+    CloseHandle(process);
+
+    std::cout << "[SUCCESS] Process handle closed.\n";
+ }
+
 //main is main
 int main()
 {
@@ -124,20 +204,14 @@ int main()
                     inputPid > std::numeric_limits<DWORD>::max())
                 {
                     std::cin.clear();
-                    std::cin.ignore(
-                        std::numeric_limits<std::streamsize>::max(),
-                        '\n'
-                    );
+                    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
                     std::cout << "[ERROR] Invalid PID.\n";
                     break;
                 }
 
-                /*
-                 * Convert the validated input into a DWORD
-                 * and attempt to open the target process.
-                 */
-                //scanProcess(); To be implemented.
+                //Convert the validated input into a DWORD and attempt to open the target process.
+                scanProcess(static_cast<DWORD>(inputPid)); // To be implemented.
 
                 break;
             }
