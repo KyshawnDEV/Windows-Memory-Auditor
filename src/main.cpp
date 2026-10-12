@@ -9,7 +9,7 @@
 #include <limits>
 
 /*
- * Windows Memory Auditor v0.2
+ * Windows Memory Auditor v0.3
  * Author: KyshawnDEV
  *
  * Purpose:
@@ -56,9 +56,7 @@
  *   - Empty input
  *   - Numbers exceeding the specified maximum
  */
-bool readUnsignedInteger(
-    unsigned long long& value,
-    unsigned long long maxValue)
+bool readUnsignedInteger(unsigned long long& value, unsigned long long maxValue)
 {
     std::string input;
 
