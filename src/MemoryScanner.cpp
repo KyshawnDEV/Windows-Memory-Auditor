@@ -87,6 +87,9 @@ std::string protectionToString(DWORD protection)
     if (protection & PAGE_NOCACHE)
         result += "+NC";
 
+    if (protection & PAGE_WRITECOMBINE)
+        result += "+WC";
+
     return result;
 }
 
