@@ -3,6 +3,7 @@
 #include "MemoryScanner.h"
 #include "AuditMetrics.h"
 #include "WindowsHandle.h"
+#include "MemoryContext.h"
 
 #include <iostream>
 #include <string>
@@ -26,6 +27,10 @@
  *   - Uses shared memory exposure classification
  *   - Reports investigation priorities instead of severity
  *   - Adds a filter for all prioritized regions
+ *
+ * Version 0.6:
+ *   - Groups committed regions by their original allocation
+ *   - Adds module and mapped-file associations where available
  */
 
 void scanProcess(DWORD pid)
@@ -59,6 +64,14 @@ void scanProcess(DWORD pid)
     ScanResult result = enumerateMemoryRegions(process);
 
     std::cout << "[INFO] Collected " << result.regions.size() << " committed regions.\n";
+
+    /*
+     * Context is collected separately from memory enumeration.
+     * Missing module or file metadata must not turn a complete
+     * memory walk into a failed scan, or change exposure priorities.
+     */
+    std::cout << "[INFO] Collecting allocation and module context...\n";
+    MemoryContext context = collectMemoryContext(process, result.regions);
 
     // --------------------------------------------------------
     // STEP 3: CALCULATE MEMORY STATISTICS
@@ -131,9 +144,10 @@ void scanProcess(DWORD pid)
     // STEP 6: DISPLAY SCAN RESULTS
     // --------------------------------------------------------
 
-    displayMemoryRegions(result.regions, filter);
+    displayMemoryRegions(result.regions, filter, &context);
 
     displayAuditSummary(result, statistics, metrics);
+    displayMemoryContextSummary(context);
 
     // --------------------------------------------------------
     // STEP 7: RELEASE PROCESS HANDLE
