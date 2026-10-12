@@ -2,43 +2,52 @@
 #pragma once
 
 #include <windows.h>
-#include <vector>
 #include <string>
+#include <vector>
 
-#include "MemoryRegion.h"
 #include "AuditMetrics.h"
+#include "MemoryRegion.h"
+#include "MemoryStatistics.h"
+#include "ScanResult.h"
 
 /*
  * MemoryScanner.h
  *
- * Provides functions for inspecting the virtual
- * memory layout of a Windows process.
+ * Declares functionality for enumerating, analyzing,
+ * filtering, and displaying process memory regions.
  *
- * Current Features:
- *   - Enumerate committed memory regions
- *   - Classify memory permissions
- *   - Identify writable/executable regions
- *   - Update audit metrics
- *
- * All operations are read-only.
+ * Version 0.4 adds:
+ *   - Scan completion tracking
+ *   - Memory usage statistics
+ *   - Memory region display filters
+ *   - Expanded audit summaries
  */
 
-// Convert Windows memory protection flags to text.
-std::string protectionToString(DWORD protection);
+// Controls which memory regions appear in the report.
+enum class DisplayFilter
+{
+    All,
+    Executable,
+    Suspicious
+};
 
-// Convert Windows memory types to text.
+// Convert Windows memory attributes to readable text.
+std::string protectionToString(DWORD protection);
 std::string memoryTypeToString(DWORD type);
 
-// Determine whether a region is writable and executable.
+// Memory permission checks.
+bool isExecutable(DWORD protection);
+bool isWritable(DWORD protection);
 bool isWritableExecutable(DWORD protection);
 
-// Enumerate committed regions belonging to a process.
-std::vector<MemoryRegion> enumerateMemoryRegions(
-    HANDLE process
-);
+// Enumerate committed memory regions.
+ScanResult enumerateMemoryRegions(HANDLE process);
 
-// Analyze and display the collected memory regions.
-void analyzeMemoryRegions(
-    const std::vector<MemoryRegion>& regions,
-    AuditMetrics& metrics
-);
+// Calculate statistics from collected regions.
+MemoryStatistics calculateMemoryStatistics(const std::vector<MemoryRegion>& regions);
+
+// Display the memory region table using a selected filter.
+void displayMemoryRegions(const std::vector<MemoryRegion>& regions, DisplayFilter filter);
+
+// Display scan status, memory statistics, and findings.
+void displayAuditSummary( const ScanResult& result, const MemoryStatistics& statistics, const AuditMetrics& metrics);
