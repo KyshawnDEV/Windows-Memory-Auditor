@@ -45,4 +45,8 @@ struct ScanResult
 
     // Number of successful VirtualQueryEx() calls.
     std::size_t queriedRegions = 0;
+
+    // Architecture and upper bound used by the query walk.
+    bool targetWow64 = false;
+    std::uintptr_t maximumAddress = 0;
 };
